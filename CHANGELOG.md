@@ -2,6 +2,17 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.5] - 2026-09-02
+
+### 新增
+- **扫码登录 `--login`**：终端渲染二维码（Unicode 半块字符，纯 HTTP 调用 B站 passport 接口，零浏览器依赖），手机 B站 App 扫码后自动轮询并保存 Cookie 至 config.json，nav 验证显示账号昵称/UID。参考整合 huntina6/bilibili-login 的接口与 UX
+- 新增 `lib/login.js` 模块：`generateQr` / `renderQrTerminal`（█▀▄ 半块渲染）/ `pollLogin`（2.5s 轮询，超时重扫提示）/ `collectDeviceCookies`（spi 设备指纹）/ `verifyLogin` / `loginFlow`；支持 2026 新版 poll 响应结构（真实状态在内层 `data.code`：86101 未扫码 / 86090 待确认 / 86038 已失效）
+- 新依赖：`qrcode`（纯 JS QR 编码器，无浏览器）
+- 配置 Cookie 更新为新的有效 SESSDATA（旧 Cookie 被 B站 风控标记导致评论接口降级——实测旧 Cookie 评论接口仅返回 3 条，新 Cookie 解锁全量 8809 条）
+
+### 测试
+- 新增 `test/login.test.js`（11 用例）：状态码映射（2026 新语义）/ 回调 URL Cookie 提取（含编码）/ 失败重试 / poll 全流程与超时 / 终端渲染行数与超宽回退 / loginFlow 端到端（mock fetch 零网络），总数 46 → 57
+
 ## [1.2.4] - 2026-09-02
 
 ### 新增

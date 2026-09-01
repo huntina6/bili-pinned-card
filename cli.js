@@ -19,9 +19,9 @@ const ui = require('./lib/ui');
 const { C, log, makeBanner, attach, ask, section, select, selectYN, summaryRow, displayWidth } = ui;
 const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
-const { loadConfig, saveConfig, DEFAULT_UID } = require('./lib/state');
+const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.4';
+const VERSION = '1.2.5';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
@@ -39,7 +39,7 @@ function parseArgs(argv) {
     uid: null, oid: null, rpid: null, type: null, interval: null, out: null,
     once: false, force: false, showReplies: null, cookie: null,
     upName: null, quiet: false, trackDyn: null, context: false, help: false,
-    upTop: null, maxDyns: null, yes: false,
+    upTop: null, maxDyns: null, yes: false, login: false,
   };
   const set = (k, v) => { a[k] = v; };
   for (let i = 0; i < argv.length; i++) {
@@ -68,6 +68,7 @@ function parseArgs(argv) {
       case '--once': set('once', true); break;
       case '--watch': set('once', false); break;
       case '--force': set('force', true); break;
+      case '--login': set('login', true); break;
       case '--show-replies': case '-r': set('showReplies', true); break;
       case '--no-replies': set('showReplies', false); break;
       case '--quiet': case '-q': set('quiet', true); break;
@@ -92,6 +93,7 @@ const HELP = `
   --max-dyns <N>          模式 B（--uid + --up-top）最多处理的动态条数（默认不限制）
   --yes                   非交互模式下跳过模式 B 的确认询问
   --uid <UP主UID>         目标 UP 主（配合 Cookie 自动识别置顶动态）
+  --login                扫码登录：终端显示二维码，手机 B站 App 扫码后自动保存 Cookie
   --cookie <SESSDATA>    登录 Cookie（可选）：解锁自动识别置顶动态，降低风控
   --watch                持续监控（默认）
   --once                 单次检查并出图后退出
@@ -104,6 +106,7 @@ const HELP = `
   -h, --help             帮助
 
 示例:
+  node cli.js --login                              # 扫码登录，自动保存 Cookie（推荐首次使用）
   node cli.js --oid 404135596 --once --force
   node cli.js --oid 404135596 --rpid 313406396048 --once   # 绘制指定评论（旧置顶等）
   node cli.js --oid 404135596 --rpid 313406396048 --context --once   # 该评论的 UP 互动回顾图
@@ -116,6 +119,22 @@ const HELP = `
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(HELP); return; }
+
+  // ---- 扫码登录：独立执行，成功后保存 Cookie 并退出 ----
+  if (args.login) {
+    const { loginFlow } = require('./lib/login');
+    try {
+      log(C.dim('正在生成登录二维码...'));
+      const { cookieStr, uname, mid } = await loginFlow({ log });
+      saveConfig({ ...loadConfig(), cookie: cookieStr });
+      log(`${C.green('✅ 登录成功:')} ${uname} (UID ${mid})`);
+      log(C.dim(`Cookie 已保存至 ${CFG_FILE}，后续命令自动沿用（有效期约 30 天，过期后重新 --login）`));
+    } catch (err) {
+      console.error(C.red(`✗ 登录失败: ${err.message}`));
+      process.exitCode = 1;
+    }
+    return;
+  }
 
   const saved = loadConfig();
   const cfg = {
