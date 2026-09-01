@@ -2,6 +2,19 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.6] - 2026-09-02
+
+### 修复（评论接口降级：老接口对 opus 评论区仅返回 3 条）
+- 新增 `lib/api/wbi.js`：WBI 签名（nav 取 img_key/sub_key → MIXIN_TAB 混淆 → wts + md5），mixinKey 缓存 1h
+- `getAllTopComments` 升级：**优先 `/x/v2/reply/wbi/main` + `pagination_str` 游标翻页**（mode=3 热门排序，0.5s/页节流），失败或被降级时自动回退老接口；返回 `{ replies, total, degraded }` 结构
+- 降级检测：`replies < 5 && all_count > 100` → degraded，CLI 输出 ⚠ 提示（建议 `--login` 刷新 Cookie）
+- `getAllSubReplies` 补 `web_location=333.788`（缺失时无法翻页，实测只返回第一页）+ 单页失败重试
+- up-top 分支子回复页数 5 → 10（覆盖 168 条高互动楼中楼）
+- 实测效果：opus 动态一级评论 3 → **197 条**（总量 8809），UP 热评卡 3 → **49 张**
+
+### 测试
+- 新增 `test/wbi.test.js`（10 用例）：getMixinKey 固定向量（公开校验值 `ea1db124af3c7062474693fa704f4ff8`）/ wbiQuery 排序与 md5 / pagination_str / isDegraded / getWbiKey 缓存 / wbi 游标翻页 / 降级回退 / -352 回退 / 子回复参数与重试，总数 57 → 67
+
 ## [1.2.5] - 2026-09-02
 
 ### 新增

@@ -21,7 +21,7 @@ const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
 const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.5';
+const VERSION = '1.2.6';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
