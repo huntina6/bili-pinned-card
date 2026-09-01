@@ -2,6 +2,15 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.4] - 2026-09-02
+
+### 新增
+- 动态短链支持：新增 `isDynamicLink`，`resolveCommentOid` 对 `t.bilibili.com/<dynId>` 与 `bilibili.com/dynamic/<dynId>` 链接自动查动态详情并转换为评论区 oid/type（此前仅 opus 链接转换，短链会拿 dynId 当 oid 导致 -400）
+- 无效动态链接友好提示：链接中的 ID 超出 B站 接口可解析范围（如 20 位超 int64 的 App 新 ID 段）时给出明确错误说明（提示重新复制链接）而非裸 API 错误码
+
+### 测试
+- `test/api.test.js` 新增 `isDynamicLink` 判定用例（t.bilibili.com 短链 / bilibili.com/dynamic / opus 与视频链接反例），总数 45 → 46
+
 ## [1.2.3] - 2026-09-02
 
 ### 新增

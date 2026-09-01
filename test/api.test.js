@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const api = require('../lib/api');
-const { extractId, isOpusLink, filterUpInteractions, extractDynamicContent, filterUpComments, buildUpContextItems, pickTopFanReplies, fixWebpUrl } = api;
+const { extractId, isOpusLink, isDynamicLink, filterUpInteractions, extractDynamicContent, filterUpComments, buildUpContextItems, pickTopFanReplies, fixWebpUrl } = api;
 
 
 // ====== extractId（回归：评论分享链接必须提取 rpid 而非 oid） ======
@@ -44,6 +44,16 @@ test('isOpusLink 判定', () => {
   assert.strictEqual(isOpusLink('404135596'), false);
   assert.strictEqual(isOpusLink(''), false);
   assert.strictEqual(isOpusLink(null), false);
+});
+
+test('isDynamicLink t.bilibili.com 短链判定', () => {
+  assert.strictEqual(isDynamicLink('https://t.bilibili.com/12429974442606592226'), true);
+  assert.strictEqual(isDynamicLink('https://t.bilibili.com/1232243387332034584?comment_root_id=456'), true);
+  assert.strictEqual(isDynamicLink('https://www.bilibili.com/dynamic/1232243387332034584'), true);
+  assert.strictEqual(isDynamicLink('https://www.bilibili.com/opus/1232243387332034584'), false); // opus 归 isOpusLink
+  assert.strictEqual(isDynamicLink('https://www.bilibili.com/video/BV1xx411c7mD'), false);
+  assert.strictEqual(isDynamicLink('404135596'), false);
+  assert.strictEqual(isDynamicLink(''), false);
 });
 
 

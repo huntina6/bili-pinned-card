@@ -1,6 +1,6 @@
 {
   "name": "@huntina6/bili-pinned-card",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "B站置顶评论监测 + 自动出图（全平台独立版，无需浏览器、无需登录，支持按评论ID出图与UP互动回顾）",
   "main": "cli.js",
   "bin": {
