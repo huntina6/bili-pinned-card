@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Syntax check
+        run: npm run check
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for leaked secrets
+        run: |
+          set -e
+          # 只匹配真实凭据形态（排除文档中的 xxx 占位符示例）
+          if grep -rniE "(sessdata=[a-z0-9%_-]{20,}|bili_jct=[a-z0-9]{30,}|ghp_[A-Za-z0-9]{36}|sk-[A-Za-z0-9]{20}|AKIA[0-9A-Z]{16})" \
+              --include="*.js" --include="*.json" --include="*.md" --include="*.yml" --include="*.yaml" . \
+              | grep -v node_modules | grep -v package-lock.json; then
+            echo "❌ 检测到疑似敏感信息！"
+            exit 1
+          else
+            echo "✅ 无敏感信息"
+          fi
+
+      - name: Check for local absolute paths in code
+        run: |
+          set -e
+          # 代码文件不允许硬编码本机路径（文档中的示例说明除外）
+          if grep -rniE "/Users/[a-z]+|/home/[a-z]+|/root/" \
+              --include="*.js" --include="*.json" --include="*.yml" --include="*.yaml" . \
+              | grep -v node_modules | grep -v package-lock.json | grep -v ".github/workflows/ci.yml"; then
+            echo "❌ 检测到本机绝对路径！"
+            exit 1
+          else
+            echo "✅ 无本机绝对路径"
+          fi

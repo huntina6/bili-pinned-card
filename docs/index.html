@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>bili-pinned-card · B站置顶评论监测与自动出图</title>
+<meta name="description" content="B站置顶评论监测 + 自动出图 —— 纯 Node.js 命令行工具，无需浏览器，置顶评论变化即生成精美卡片图。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23FB7299'/%3E%3Ctext x='16' y='22' font-size='16' font-weight='bold' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E2%9D%A4%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  --bg-0: #141126; --bg-1: #1a1530; --bg-2: #2b2140;
+  --pink: #FB7299; --pink-2: #FF5C8A;
+  --text: #f5f3fc; --dim: #9a93b8; --dimmer: #6f6890;
+  --card: rgba(255,255,255,0.06); --border: rgba(255,255,255,0.12);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  background: linear-gradient(160deg, var(--bg-2) 0%, var(--bg-1) 45%, var(--bg-0) 100%);
+  color: var(--text); line-height: 1.7; min-height: 100vh;
+}
+a { color: var(--pink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+
+/* 导航 */
+nav {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(20,17,38,0.85); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.logo { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pink); display: inline-block; }
+nav a.nav-link { color: var(--dim); font-size: 14px; }
+nav a.nav-link:hover { color: var(--text); text-decoration: none; }
+nav .gh { margin-left: auto; font-size: 14px; }
+
+/* Hero */
+.hero { text-align: center; padding: 96px 0 72px; }
+.hero .badge {
+  display: inline-block; padding: 4px 14px; border-radius: 999px;
+  background: rgba(251,114,153,0.15); color: var(--pink);
+  border: 1px solid rgba(251,114,153,0.35); font-size: 13px; margin-bottom: 22px;
+}
+.hero h1 { font-size: 46px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 14px; }
+.hero h1 .pink { color: var(--pink); }
+.hero .sub { font-size: 20px; color: var(--dim); margin-bottom: 10px; }
+.hero .tagline { font-size: 14px; color: var(--dimmer); margin-bottom: 36px; }
+.cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-block; padding: 12px 30px; border-radius: 999px;
+  font-size: 15px; font-weight: 500; transition: transform 0.15s, opacity 0.15s;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn-primary { background: linear-gradient(120deg, var(--pink), var(--pink-2)); color: #fff; }
+.btn-ghost { border: 1px solid var(--border); color: var(--text); background: rgba(255,255,255,0.04); }
+.hero .meta { margin-top: 34px; font-size: 13px; color: var(--dimmer); }
+.hero .meta span { margin: 0 10px; }
+
+/* 区块通用 */
+section { padding: 64px 0; }
+section h2 {
+  font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 10px;
+}
+section .sec-sub { text-align: center; color: var(--dim); font-size: 15px; margin-bottom: 44px; }
+
+/* 特性 */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 24px; transition: border-color 0.2s, transform 0.2s;
+}
+.card:hover { border-color: rgba(251,114,153,0.4); transform: translateY(-2px); }
+.card .ic {
+  width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  font-size: 20px; margin-bottom: 14px; background: rgba(251,114,153,0.14);
+}
+.card h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: var(--dim); }
+
+/* 效果展示 */
+.showcase { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+.shot { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; }
+.shot .cap { text-align: center; font-size: 14px; color: var(--dim); margin-bottom: 12px; }
+.shot img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.shot.tall .img-scroll {
+  max-height: 720px; overflow-y: auto; border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.shot.tall img { border: none; border-radius: 0; }
+
+/* 代码 */
+.code {
+  background: #0d0a1f; border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px; font-family: "SF Mono", Consolas, "Courier New", monospace;
+  font-size: 13.5px; line-height: 1.8; overflow-x: auto; margin-bottom: 16px;
+}
+.code .cm { color: #6f6890; }
+.code .hl { color: var(--pink); }
+.cmd-title { font-size: 14px; font-weight: 600; margin: 22px 0 8px; color: var(--text); }
+.cmd-title:first-child { margin-top: 0; }
+
+/* 参数表 */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+th { color: var(--pink); font-weight: 600; white-space: nowrap; }
+td:first-child { white-space: nowrap; font-family: "SF Mono", Consolas, monospace; color: var(--text); }
+td { color: var(--dim); }
+tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* 相关项目 */
+.link-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.link-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 22px; display: block; transition: border-color 0.2s, transform 0.2s;
+}
+.link-card:hover { border-color: rgba(251,114,153,0.4); transform: translateY(-2px); text-decoration: none; }
+.link-card .name { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.link-card .desc { font-size: 13px; color: var(--dim); }
+
+/* 页脚 */
+footer { border-top: 1px solid var(--border); padding: 34px 0 44px; text-align: center; font-size: 13px; color: var(--dimmer); }
+footer a { color: var(--dim); }
+footer .mt { margin-top: 8px; }
+
+@media (max-width: 820px) {
+  .hero h1 { font-size: 34px; }
+  .showcase { grid-template-columns: 1fr; }
+  .link-row { grid-template-columns: 1fr; }
+  nav .nav-link { display: none; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="#top"><span class="dot"></span>bili-pinned-card</a>
+    <a class="nav-link" href="#features">特性</a>
+    <a class="nav-link" href="#showcase">效果</a>
+    <a class="nav-link" href="#quickstart">快速开始</a>
+    <a class="nav-link" href="#install">安装</a>
+    <a class="gh" href="https://github.com/huntina6/ttkj" target="_blank">GitHub ↗</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <span class="badge">纯 Node.js · 零浏览器依赖 · MIT 开源</span>
+    <h1>B站置顶评论监测 + <span class="pink">自动出图</span></h1>
+    <p class="sub">置顶评论变化，即生成精美卡片图</p>
+    <p class="tagline">置顶换新 · 取消置顶 · UP 互动回顾 · 动态更新 —— 全自动识别，全平台运行</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#quickstart">快速开始</a>
+      <a class="btn btn-ghost" href="https://github.com/huntina6/ttkj/releases" target="_blank">查看 Releases</a>
+    </div>
+    <p class="meta"><span>v1.2.3</span><span>Node ≥ 18</span><span>Windows · macOS · Linux</span></p>
+  </div>
+</header>
+
+<main>
+  <section id="features">
+    <div class="wrap">
+      <h2>功能特性</h2>
+      <p class="sec-sub">一个命令行程序，覆盖置顶评论的全生命周期</p>
+      <div class="grid">
+        <div class="card">
+          <div class="ic">🛰</div>
+          <h3>实时监测</h3>
+          <p>分钟级轮询，自动识别置顶评论换新 / 置顶动态替换 / 取消置顶，变化即出图。</p>
+        </div>
+        <div class="card">
+          <div class="ic">🎴</div>
+          <h3>置顶评论卡片</h3>
+          <p>深色渐变 + 粉色徽标设计，头像、正文、表情内联、图片网格，2x 高清输出。</p>
+        </div>
+        <div class="card">
+          <div class="ic">💬</div>
+          <h3>UP 互动回顾</h3>
+          <p>取消置顶/换新时，拉取全部子回复，筛选 UP 回复与 UP 点赞，自动生成对话链回顾图。</p>
+        </div>
+        <div class="card">
+          <div class="ic">🔥</div>
+          <h3>UP 热评 TOP 卡</h3>
+          <p>指定动态或自动检索账号全部动态，每条 UP 一级评论出一张卡：UP 回复上下文全量回顾 + 粉丝高赞 TOP N，文件名即评论发布时间。</p>
+        </div>
+        <div class="card">
+          <div class="ic">🖼</div>
+          <h3>图片按比例展开</h3>
+          <p>解析图片真实尺寸，横图、竖图、长图完整显示，绝不裁剪变形。</p>
+        </div>
+        <div class="card">
+          <div class="ic">📦</div>
+          <h3>纯 Node 实现</h3>
+          <p>无需浏览器、无需登录（匿名可用），@resvg/resvg-js 跨平台预编译，安装即用。</p>
+        </div>
+        <div class="card">
+          <div class="ic">⚙️</div>
+          <h3>可挂 cron</h3>
+          <p>命令行模式支持 --uid/--oid/--cookie/--watch，配置持久化，安静模式适配脚本。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="showcase">
+    <div class="wrap">
+      <h2>效果展示</h2>
+      <p class="sec-sub">真实生成的卡片（点击图片查看原图）</p>
+      <div class="showcase">
+        <div class="shot">
+          <div class="cap">置顶评论卡片</div>
+          <a href="assets/pinned-card.png" target="_blank"><img src="assets/pinned-card.png" alt="置顶评论卡片效果图"></a>
+        </div>
+        <div class="shot tall">
+          <div class="cap">UP 互动回顾图（取消置顶时自动生成）· 框内上下滚动可查看完整</div>
+          <div class="img-scroll">
+            <a href="assets/up-context.png" target="_blank"><img src="assets/up-context.png" alt="UP互动回顾图效果图"></a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <div class="wrap">
+      <h2>快速开始</h2>
+      <p class="sec-sub">三分钟跑起来</p>
+      <div class="cmd-title">安装</div>
+      <div class="code"><span class="cm"># 需要 Node.js ≥ 18</span><br><span class="hl">git clone</span> https://github.com/huntina6/ttkj.git && <span class="hl">cd</span> ttkj<br><span class="hl">npm install</span></div>
+      <div class="cmd-title">单次出图（匿名可用，无需任何账号）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --once</div>
+      <div class="cmd-title">绘制指定评论（旧置顶等）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --rpid 313406396048 --once</div>
+      <div class="cmd-title">生成 UP 互动回顾图（自动识别 UP）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --rpid 313406396048 --context --once</div>
+      <div class="cmd-title">UP 热评 TOP 卡（单动态，每条 UP 评论一张）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --up-top --once</div>
+      <div class="cmd-title">UP 热评 TOP 卡（全账号自动检索，先询问确认）</div>
+      <div class="code"><span class="hl">node cli.js</span> --uid 401315430 --cookie <span class="cm">"SESSDATA=xxx"</span> --up-top --once</div>
+      <div class="cmd-title">持续监控（需 B站 Cookie）</div>
+      <div class="code"><span class="hl">node cli.js</span> --uid 401315430 --cookie <span class="cm">"SESSDATA=xxx; bili_jct=yyy"</span> --watch -i 60</div>
+      <div class="cmd-title">主要参数</div>
+      <table>
+        <tr><th>参数</th><th>说明</th></tr>
+        <tr><td>--oid</td><td>动态 ID 或链接（含其置顶评论）</td></tr>
+        <tr><td>--rpid</td><td>评论 ID 或链接，直接绘制该评论卡片</td></tr>
+        <tr><td>--context</td><td>与 --rpid 联用，生成 UP 互动回顾图</td></tr>
+        <tr><td>--up-top [N]</td><td>UP 热评 TOP 卡（默认 N=10）；配合 --uid 自动检索账号全部动态</td></tr>
+        <tr><td>--max-dyns / --yes</td><td>限制处理动态条数 / 非交互跳过确认询问</td></tr>
+        <tr><td>--uid</td><td>目标 UP 主（配合 Cookie 自动识别置顶动态）</td></tr>
+        <tr><td>--cookie</td><td>登录 Cookie（可选）：完整子回复 + 降低风控</td></tr>
+        <tr><td>--watch / --once</td><td>持续监控 / 单次检查</td></tr>
+        <tr><td>--track-dyn</td><td>同时监测普通动态更新</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <h2>安装方式</h2>
+      <p class="sec-sub">源码、npm 包、发布包三种渠道</p>
+      <div class="link-row">
+        <a class="link-card" href="https://github.com/huntina6/ttkj" target="_blank">
+          <div class="name">GitHub 仓库</div>
+          <div class="desc">源码、Issue、完整 README 与更新日志</div>
+        </a>
+        <a class="link-card" href="https://github.com/huntina6/ttkj/releases" target="_blank">
+          <div class="name">Releases 发布包</div>
+          <div class="desc">v1.0.0 → v1.2.3，每个版本带更新说明，可追溯</div>
+        </a>
+      </div>
+      <div class="cmd-title" style="margin-top:22px">npm 包（GitHub Packages）</div>
+      <div class="code"><span class="hl">npm install</span> --registry=https://npm.pkg.github.com @huntina6/bili-pinned-card</div>
+    </div>
+  </section>
+
+  <section id="related">
+    <div class="wrap">
+      <h2>相关项目</h2>
+      <p class="sec-sub">B站自动化工具生态</p>
+      <div class="link-row">
+        <a class="link-card" href="https://github.com/huntina6/2568x" target="_blank">
+          <div class="name">2568x · 星星的瞳</div>
+          <div class="desc">B站账号活动监测（12 类事件）+ 动态归档工具包，本项目的互动回顾思路参考其 unpinned-context 实现</div>
+        </a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><a href="https://github.com/huntina6/ttkj" target="_blank">huntina6/ttkj</a> · MIT License © 2026 huntina6</p>
+    <p class="mt">仅供学习与技术交流，请遵守 B站用户协议 · Powered by GitHub Pages</p>
+  </div>
+</footer>
+
+</body>
+</html>

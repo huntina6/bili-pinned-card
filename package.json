@@ -1,0 +1,37 @@
+{
+  "name": "@huntina6/bili-pinned-card",
+  "version": "1.2.3",
+  "description": "B站置顶评论监测 + 自动出图（全平台独立版，无需浏览器、无需登录，支持按评论ID出图与UP互动回顾）",
+  "main": "cli.js",
+  "bin": {
+    "bili-pinned-card": "cli.js"
+  },
+  "scripts": {
+    "start": "node cli.js",
+    "test": "node --test",
+    "check": "node --check cli.js && node --check lib/ui.js && node --check lib/state.js && node --check lib/monitor.js && node --check lib/png.js && node --check lib/api.js && node --check lib/api/client.js && node --check lib/api/util.js && node --check lib/api/image.js && node --check lib/api/dynamic.js && node --check lib/api/comment.js && node --check lib/card.js && node --check lib/card/constants.js && node --check lib/card/text.js && node --check lib/card/image.js && node --check lib/card/layout.js && node --check lib/card/templates.js && node --check test/api.test.js && node --check test/card.test.js && node -e \"console.log('语法检查通过')\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "bilibili",
+    "pinned-comment",
+    "card",
+    "monitor",
+    "cli",
+    "cross-platform"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huntina6/ttkj.git"
+  },
+  "bugs": {
+    "url": "https://github.com/huntina6/ttkj/issues"
+  },
+  "homepage": "https://github.com/huntina6/ttkj",
+  "license": "MIT",
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}
