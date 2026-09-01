@@ -31,7 +31,7 @@ npm install
 node cli.js --login
 ```
 
-终端显示二维码 → 手机 B站 App「扫一扫」扫码 → 自动保存 Cookie 到 `~/.bili-pinned-card/config.json`。扫码登录获取的 Cookie 设备指纹干净，可避免手动粘贴 Cookie 被风控标记导致评论接口降级（实测：被标记的 Cookie 评论接口只返回 3 条，新 Cookie 立即解锁全量）。Cookie 有效期约 30 天，过期后重新执行即可；登录成功会显示账号昵称与 UID 验证。
+终端显示二维码 → 手机 B站 App「扫一扫」扫码 → 自动保存 Cookie 到 `~/.bili-pinned-card/config.json`。扫码登录获取的 Cookie 设备指纹干净，可降低被 B站 风控标记的概率（评论接口已内置 WBI 签名与自动降级回退；若 Cookie 被限流，程序会输出 ⚠ 警告并提示重新登录）。Cookie 有效期约 30 天，过期后重新执行即可；登录成功会显示账号昵称与 UID 验证。
 
 ### 交互模式（推荐）
 

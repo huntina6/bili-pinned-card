@@ -30,14 +30,14 @@ test('classifyPoll 状态码映射', () => {
 
 // ====== 回调 URL → Cookie 提取 ======
 test('extractCookiesFromUrl 提取认证 Cookie（含 URL 编码值）', () => {
+  // 注意：示例值使用短占位串（避免触发 CI 安全扫描的 SESSDATA/bili_jct 形态正则）
   const url = 'https://passport.bilibili.com/h5-app/passport/login/scan?navhide=1&from=web&qr_login_key=abc'
-    + '&SESSDATA=5f052162%2C1802187162%2Cde755%2A82Cj&bili_jct=b70aebdbc25eb3fd5df7cf54619fed98'
-    + '&DedeUserID=339117663&DedeUserID__ckMd5=ed101c645062f471';
+    + '&SESSDATA=abc%2Cdef%2Aghi&bili_jct=jct1&DedeUserID=339117663&DedeUserID__ckMd5=md51';
   const ck = extractCookiesFromUrl(url);
-  assert.strictEqual(ck.SESSDATA, '5f052162,1802187162,de755*82Cj'); // %2C→, %2A→*
-  assert.strictEqual(ck.bili_jct, 'b70aebdbc25eb3fd5df7cf54619fed98');
+  assert.strictEqual(ck.SESSDATA, 'abc,def*ghi'); // %2C→, %2A→*
+  assert.strictEqual(ck.bili_jct, 'jct1');
   assert.strictEqual(ck.DedeUserID, '339117663');
-  assert.strictEqual(ck.DedeUserID__ckMd5, 'ed101c645062f471');
+  assert.strictEqual(ck.DedeUserID__ckMd5, 'md51');
 });
 
 test('extractCookiesFromUrl 无参/空 URL 返回空对象', () => {
