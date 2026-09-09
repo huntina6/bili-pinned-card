@@ -149,7 +149,14 @@ async function main() {
     const { loginFlow } = require('./lib/login');
     try {
       log(C.dim('正在生成登录二维码...'));
-      const { cookieStr, uname, mid } = await loginFlow({ log });
+      const { cookieStr, uname, mid } = await loginFlow({
+        log,
+        onStatus: (code, msg) => {
+          // 只提示关键动作，避免 2.5s 一次的轮询刷屏
+          if (code === 86090) log(C.yellow(`已扫码！请在手机 B站 App 上点击「确认登录」`));
+          else if (code === 86038) log(C.yellow('二维码已失效，正在等待重新生成...'));
+        },
+      });
       saveConfig({ ...loadConfig(), cookie: cookieStr });
       log(`${C.green('✅ 登录成功:')} ${uname} (UID ${mid})`);
       log(C.dim(`Cookie 已保存至 ${CFG_FILE}，后续命令自动沿用（有效期约 30 天，过期后重新 --login）`));
