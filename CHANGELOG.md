@@ -2,6 +2,11 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+- 卡片文件名时间戳统一为内容发布时间（置顶卡/互动回顾图取评论 ctime，动态卡取动态发布时间，异常时兜底生成时间）；up-top 卡此前已是评论时间
+
 ## [1.2.7] - 2026-09-09
 
 ### 修复
