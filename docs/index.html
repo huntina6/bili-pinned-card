@@ -142,7 +142,7 @@ footer .mt { margin-top: 8px; }
     <a class="nav-link" href="#showcase">效果</a>
     <a class="nav-link" href="#quickstart">快速开始</a>
     <a class="nav-link" href="#install">安装</a>
-    <a class="gh" href="https://github.com/huntina6/ttkj" target="_blank">GitHub ↗</a>
+    <a class="gh" href="https://github.com/huntina6/bili-pinned-card" target="_blank">GitHub ↗</a>
   </div>
 </nav>
 
@@ -154,9 +154,9 @@ footer .mt { margin-top: 8px; }
     <p class="tagline">置顶换新 · 取消置顶 · UP 互动回顾 · 动态更新 —— 全自动识别，全平台运行</p>
     <div class="cta">
       <a class="btn btn-primary" href="#quickstart">快速开始</a>
-      <a class="btn btn-ghost" href="https://github.com/huntina6/ttkj/releases" target="_blank">查看 Releases</a>
+      <a class="btn btn-ghost" href="https://github.com/huntina6/bili-pinned-card/releases" target="_blank">查看 Releases</a>
     </div>
-    <p class="meta"><span>v1.2.3</span><span>Node ≥ 18</span><span>Windows · macOS · Linux</span></p>
+    <p class="meta"><span>v1.2.7</span><span>Node ≥ 18</span><span>Windows · macOS · Linux</span></p>
   </div>
 </header>
 
@@ -229,9 +229,11 @@ footer .mt { margin-top: 8px; }
       <h2>快速开始</h2>
       <p class="sec-sub">三分钟跑起来</p>
       <div class="cmd-title">安装</div>
-      <div class="code"><span class="cm"># 需要 Node.js ≥ 18</span><br><span class="hl">git clone</span> https://github.com/huntina6/ttkj.git && <span class="hl">cd</span> ttkj<br><span class="hl">npm install</span></div>
-      <div class="cmd-title">单次出图（匿名可用，无需任何账号）</div>
-      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --once</div>
+      <div class="code"><span class="cm"># 需要 Node.js ≥ 18</span><br><span class="hl">git clone</span> https://github.com/huntina6/bili-pinned-card.git && <span class="hl">cd</span> bili-pinned-card<br><span class="hl">npm install</span></div>
+      <div class="cmd-title">扫码登录（推荐首次使用，替代手动粘贴 Cookie）</div>
+      <div class="code"><span class="hl">node cli.js</span> --login</div>
+      <div class="cmd-title">置顶评论卡片（动态链接直贴，支持 Opus 短链）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid https://www.bilibili.com/opus/1232243387332034584 --once</div>
       <div class="cmd-title">绘制指定评论（旧置顶等）</div>
       <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --rpid 313406396048 --once</div>
       <div class="cmd-title">生成 UP 互动回顾图（自动识别 UP）</div>
@@ -245,7 +247,8 @@ footer .mt { margin-top: 8px; }
       <div class="cmd-title">主要参数</div>
       <table>
         <tr><th>参数</th><th>说明</th></tr>
-        <tr><td>--oid</td><td>动态 ID 或链接（含其置顶评论）</td></tr>
+        <tr><td>--login</td><td>扫码登录：终端二维码，手机 B站 App 扫码后自动保存 Cookie</td></tr>
+        <tr><td>--oid</td><td>动态 ID 或链接（含其置顶评论；支持 Opus / t.bilibili.com 短链自动转换）</td></tr>
         <tr><td>--rpid</td><td>评论 ID 或链接，直接绘制该评论卡片</td></tr>
         <tr><td>--context</td><td>与 --rpid 联用，生成 UP 互动回顾图</td></tr>
         <tr><td>--up-top [N]</td><td>UP 热评 TOP 卡（默认 N=10）；配合 --uid 自动检索账号全部动态</td></tr>
@@ -263,13 +266,13 @@ footer .mt { margin-top: 8px; }
       <h2>安装方式</h2>
       <p class="sec-sub">源码、npm 包、发布包三种渠道</p>
       <div class="link-row">
-        <a class="link-card" href="https://github.com/huntina6/ttkj" target="_blank">
+        <a class="link-card" href="https://github.com/huntina6/bili-pinned-card" target="_blank">
           <div class="name">GitHub 仓库</div>
           <div class="desc">源码、Issue、完整 README 与更新日志</div>
         </a>
-        <a class="link-card" href="https://github.com/huntina6/ttkj/releases" target="_blank">
+        <a class="link-card" href="https://github.com/huntina6/bili-pinned-card/releases" target="_blank">
           <div class="name">Releases 发布包</div>
-          <div class="desc">v1.0.0 → v1.2.3，每个版本带更新说明，可追溯</div>
+          <div class="desc">v1.0.0 → v1.2.7，每个版本带更新说明，可追溯</div>
         </a>
       </div>
       <div class="cmd-title" style="margin-top:22px">npm 包（GitHub Packages）</div>
@@ -293,7 +296,7 @@ footer .mt { margin-top: 8px; }
 
 <footer>
   <div class="wrap">
-    <p><a href="https://github.com/huntina6/ttkj" target="_blank">huntina6/ttkj</a> · MIT License © 2026 huntina6</p>
+    <p><a href="https://github.com/huntina6/bili-pinned-card" target="_blank">huntina6/bili-pinned-card</a> · MIT License © 2026 huntina6</p>
     <p class="mt">仅供学习与技术交流，请遵守 B站用户协议 · Powered by GitHub Pages</p>
   </div>
 </footer>

@@ -24,12 +24,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/huntina6/ttkj.git"
+    "url": "git+https://github.com/huntina6/bili-pinned-card.git"
   },
   "bugs": {
-    "url": "https://github.com/huntina6/ttkj/issues"
+    "url": "https://github.com/huntina6/bili-pinned-card/issues"
   },
-  "homepage": "https://github.com/huntina6/ttkj",
+  "homepage": "https://github.com/huntina6/bili-pinned-card",
   "license": "MIT",
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
