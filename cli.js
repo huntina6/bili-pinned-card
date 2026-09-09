@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.2.9 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.3.0 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法：
@@ -16,12 +16,13 @@
 const path = require('path');
 const readline = require('readline');
 const ui = require('./lib/ui');
+const logger = require('./lib/logger');
 const { C, log, makeBanner, attach, ask, section, select, selectYN, summaryRow, displayWidth } = ui;
 const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
 const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.9';
+const VERSION = '1.3.0';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
@@ -39,7 +40,7 @@ function parseArgs(argv) {
     uid: null, oid: null, rpid: null, type: null, interval: null, out: null,
     once: false, force: false, showReplies: null, cookie: null,
     upName: null, quiet: false, trackDyn: null, context: false, help: false,
-    upTop: null, maxDyns: null, yes: false, login: false,
+    upTop: null, maxDyns: null, yes: false, login: false, verbose: false,
   };
   const set = (k, v) => { a[k] = v; };
   for (let i = 0; i < argv.length; i++) {
@@ -72,6 +73,7 @@ function parseArgs(argv) {
       case '--show-replies': case '-r': set('showReplies', true); break;
       case '--no-replies': set('showReplies', false); break;
       case '--quiet': case '-q': set('quiet', true); break;
+      case '--verbose': case '-v': set('verbose', true); break;
       case '--help': case '-h': set('help', true); break;
       default:
         if (arg.startsWith('--')) { console.error(C.red(`未知参数: ${arg}`)); process.exit(1); }
@@ -127,7 +129,11 @@ const HELP = `
   -i, --interval <秒>    监控间隔（默认 60，最短 10）
   -o, --out <目录>       输出目录（默认 ./output）
   -q, --quiet            安静模式（仅输出结果行）
+  -v, --verbose          详细日志：debug 级写入文件（每次 API 请求摘要/耗时），排障用
   -h, --help             帮助
+
+  日志: 运行详情自动落盘 ~/.bili-pinned-card/logs/YYYY-MM-DD.log（保留 30 天）
+        Cookie/凭据不入日志；debug 级请求摘要需加 -v
 
 示例:
   node cli.js --login                              # 扫码登录，自动保存 Cookie（推荐首次使用）
@@ -161,6 +167,8 @@ async function qrLogin(log) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) { console.log(HELP); return; }
+  if (args.verbose) logger.setLevel('debug'); // -v：请求摘要等 debug 级信息写入日志文件
+  logger.info(`===== 启动 v${VERSION} | ${process.argv.slice(2).join(' ') || '(交互模式)'} =====`);
 
   // ---- 扫码登录：独立执行，成功后保存 Cookie 并退出 ----
   if (args.login) {
@@ -169,6 +177,7 @@ async function main() {
       await qrLogin(log);
     } catch (err) {
       console.error(C.red(`✗ 登录失败: ${err.message}`));
+      logger.error(`登录失败: ${err.message}`);
       process.exitCode = 1;
     }
     return;
@@ -188,10 +197,12 @@ async function main() {
   // uid 必须是纯数字（拼入 API URL，脏值产生无效请求且无提示）
   if (args.uid && !/^\d+$/.test(String(args.uid))) {
     console.error(C.red(`--uid 必须是数字 UID，收到: ${args.uid}`));
+    logger.error(`参数错误: --uid 非数字 (${args.uid})`);
     process.exit(1);
   }
   if (saved.uid && !/^\d+$/.test(String(saved.uid))) {
     console.error(C.red(`配置中的 uid 非法（${saved.uid}），请删除 ~/.bili-pinned-card/config.json 后重试`));
+    logger.error(`配置错误: 已保存 uid 非法 (${saved.uid})`);
     process.exit(1);
   }
 
@@ -200,6 +211,7 @@ async function main() {
   if (process.stdin.isTTY && !args.oid && args.cookie == null) {
     console.log(BANNER);
     bannerShown = true;
+    log(C.dim(`运行日志: ${logger.logDir()}（排障加 -v 记录每次 API 请求）`));
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     attach(rl);
 
@@ -251,6 +263,7 @@ async function main() {
         cfg.cookie = cookieStr; // 本次运行立即生效（qrLogin 已持久化）
       } catch (err) {
         console.error(C.red(`  ✗ 扫码登录失败: ${err.message}，本次沿用原登录状态运行`));
+        logger.error(`交互扫码登录失败: ${err.message}`);
       }
     } else if (cookieMode === 'anon') {
       const hadCookie = !!cfg.cookie;
@@ -272,6 +285,7 @@ async function main() {
         if (r.type != null) cfg.type = r.type;
       } catch (e) {
         console.log(C.red(`  ✗ 链接解析失败: ${e.message}，请检查后重试`));
+        logger.error(`链接解析失败: ${e.message}`);
       }
     }
 
@@ -330,6 +344,7 @@ async function main() {
     : (cfg.once ? '单次检查' : `每 ${cfg.interval}s 监控`);
   if (!cfg.quiet && !bannerShown) {
     console.log(BANNER);
+    log(C.dim(`运行日志: ${logger.logDir()}（排障加 -v 记录每次 API 请求）`));
     log(`${C.bold('目标:')} ${cfg.oid ? '动态 ' + cfg.oid : 'UID ' + cfg.uid}${cfg.cookie ? ' ' + C.dim('(已带 Cookie)') : C.dim(' (匿名)')}`);
     log(`${C.bold('输出:')} ${cfg.outDir} · ${modeTxt}${cfg.force ? ' · 强制出图' : ''}${cfg.showReplies && !cfg.upTop ? ' · 含精彩回复' : ''}`);
     log('');
@@ -360,6 +375,7 @@ async function main() {
       } catch (err) {
         if (err instanceof BiliError && err.code === -101) {
           console.log(C.red(`  ✗ Cookie 已失效 (-101)：${err.message}`));
+          logger.error(`Cookie 失效 (-101): ${err.message}`);
           console.log(C.yellow('  → 解决：运行 --login 重新扫码登录（Cookie 约 30 天有效）'));
           if (cfg.once) { process.exitCode = 1; return; }
         } else if (err instanceof BiliError && (err.code === -352 || err.code === -412)) {
@@ -367,10 +383,12 @@ async function main() {
             ? '请求过于频繁被 B站 限流（本机 IP/指纹），请等待数分钟冷却后重试；程序已内置每次请求 1~2s 随机节流'
             : '匿名请求被风控，建议 --login 扫码登录后重试，或直接指定动态 ID（--oid <动态ID>）';
           console.log(C.red(`  ⚠ 风控 (${err.code})：${err.message}`));
+          logger.warn(`风控 (${err.code}): ${err.message}`);
           console.log(C.yellow(`  → ${freqHint}`));
           if (cfg.once) { process.exitCode = 1; return; }
         } else {
           console.log(C.red(`  ✗ 检查失败: ${err.message || err}`));
+          logger.error(`检查失败: ${err.message || err}`);
         }
       }
 
@@ -391,6 +409,7 @@ async function main() {
 if (require.main === module) {
   main().catch(err => {
     console.error(C.red('致命错误: ' + (err?.message || err)));
+    logger.error('致命错误: ' + (err?.message || err));
     process.exit(1);
   });
 }

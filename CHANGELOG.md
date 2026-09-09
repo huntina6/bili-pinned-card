@@ -2,6 +2,16 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-09-09
+
+### 新增
+- **运行日志落盘**（`~/.bili-pinned-card/logs/YYYY-MM-DD.log`，按天滚动保留 30 天）：
+  - 业务事件（info，默认）：启动命令/出卡/置顶变化/风控警告——`-q` 静默模式终端不显示但文件照记
+  - 请求摘要（debug，需 `-v` 或 `BILI_LOG_LEVEL=debug`）：每次 API 请求的 URL 路径/HTTP 状态/业务码/耗时
+  - 错误分级（warn/error）：风控拦截、网络异常、Cookie 失效、致命错误
+- **安全设计**：Cookie/ticket/qrcode_key 等凭据参数一律 `***` 打码，超长值截断；URL 非法时整体打码；ANSI 颜色在文件层剥离；写盘失败静默不影响主流程
+- 新模块 `lib/logger.js`（零依赖同步追加）+ `test/logger.test.js`（6 用例，临时目录隔离）；CLI 启动时提示日志位置与 `-v` 用法
+
 ## [1.2.9] - 2026-09-09
 
 ### 新增
