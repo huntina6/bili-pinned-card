@@ -154,3 +154,57 @@ test('loginFlow 完整流程返回 cookieStr/uname/mid', async (t) => {
   assert.ok(logs.some(l => l.includes('扫码')), '应有扫码提示日志');
   assert.ok(calls >= 4, `应至少 4 次请求，实际 ${calls}`);
 });
+
+// ====== 2026 新版：crossDomain ticket 兑换 ======
+test('exchangeCrossDomain 跟随跳转收集 Set-Cookie', async (t) => {
+  const jsonRes = obj => ({ text: async () => JSON.stringify(obj) });
+  const mkRes = (status, { setCookies, location }) => ({
+    text: async () => '',
+    headers: {
+      getSetCookie: () => setCookies || [],
+      get: (k) => (k.toLowerCase() === 'location' ? (location || null) : null),
+    },
+    status,
+  });
+  const hops = [
+    mkRes(302, { setCookies: ['SESSDATA=abc%2C123; path=/; domain=.bilibili.com', 'bili_jct=jct9; path=/'], location: 'https://www.bilibili.com/' }),
+    mkRes(302, { setCookies: ['DedeUserID=339117663; path=/'], location: 'https://space.bilibili.com/' }),
+    mkRes(200, { setCookies: ['theme=dark; path=/'] }),
+  ];
+  let i = 0;
+  t.mock.method(globalThis, 'fetch', async () => hops[i++]);
+  const { exchangeCrossDomain } = require('../lib/login');
+  const ck = await exchangeCrossDomain('https://passport.biligame.com/x/passport-login/web/crossDomain?ticket=T1');
+  assert.strictEqual(ck.SESSDATA, 'abc%2C123');
+  assert.strictEqual(ck.bili_jct, 'jct9');
+  assert.strictEqual(ck.DedeUserID, '339117663');
+  assert.strictEqual(ck.theme, undefined, '非认证键不收集');
+  assert.strictEqual(i, 3, '应跟随 2 次跳转');
+});
+
+test('pollLogin 成功 URL 为 ticket 中转时自动兑换', async (t) => {
+  const jsonRes = obj => ({ text: async () => JSON.stringify(obj) });
+  const mkRes = (status, { setCookies, location }) => ({
+    text: async () => '',
+    headers: {
+      getSetCookie: () => setCookies || [],
+      get: (k) => (k.toLowerCase() === 'location' ? (location || null) : null),
+    },
+    status,
+  });
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const u = String(url);
+    if (u.includes('/qrcode/poll')) {
+      return jsonRes({ code: 0, message: 'OK', data: { code: 0, url: 'https://passport.biligame.com/x/passport-login/web/crossDomain?ticket=T2' } });
+    }
+    if (u.includes('/x/frontend/finger/spi')) return jsonRes({ code: 0, data: { b_3: 'B3' } });
+    calls++;
+    return mkRes(302, { setCookies: ['SESSDATA=s1%2C2; path=/', 'bili_jct=jct1; path=/'], location: 'https://www.bilibili.com/' });
+  });
+  const { pollLogin } = require('../lib/login');
+  const { cookies } = await pollLogin('K1', { timeoutMs: 60000 });
+  assert.strictEqual(cookies.SESSDATA, 's1%2C2');
+  assert.strictEqual(cookies.bili_jct, 'jct1');
+  assert.ok(calls >= 1, '应触发 ticket 兑换请求');
+});
