@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.2.7 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.2.8 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法：
@@ -21,7 +21,7 @@ const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
 const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.7';
+const VERSION = '1.2.8';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
@@ -207,12 +207,20 @@ async function main() {
     section('运行模式');
     console.log(C.dim('  ↑/↓ 选择，回车确认'));
     const mode = await select([
-      { key: '1', label: '持续监控', desc: '检测到置顶评论变化自动出图（默认）' },
-      { key: '2', label: '单次检查', desc: '立即检查并出图一次' },
+      { key: '1', label: '持续监控', desc: '置顶评论变化自动出图（默认）' },
+      { key: '2', label: '单次检查', desc: '立即检查置顶并出图一次' },
+      { key: '3', label: 'UP 热评 TOP 卡', desc: 'UP 的每条一级评论出一张卡' },
       { key: '0', label: '退出', desc: '' },
     ], 0);
     if (mode === '0') { console.log('\n再见 👋'); rl.close(); attach(null); return; }
-    cfg.once = mode === '2';
+    const hot = mode === '3'; // UP 热评 TOP 卡模式（一次性批量出图）
+    cfg.once = mode === '2' || hot;
+    if (hot) {
+      const nAns = await ask('每张卡的粉丝高赞区条数', '10');
+      cfg.upTop = Math.max(1, Math.min(50, parseInt(nAns, 10) || 10));
+    } else {
+      cfg.upTop = 0; // 交互未选热评时强制清零（防已保存配置残留误入热评分支）
+    }
 
     // —— 目标设置 ——
     section('目标设置');
@@ -252,7 +260,11 @@ async function main() {
 
     // —— 动态目标（链接解析需用上面确定的 Cookie） ——
     section('动态目标');
-    const oidAns = await ask('动态链接或 ID（可选，留空则自动识别置顶动态；支持 Opus 链接）', cfg.oid || '');
+    const oidAns = await ask(
+      hot
+        ? '动态链接或 ID（推荐填单条动态；留空则检索该 UP 全账号动态，逐条确认处理）'
+        : '动态链接或 ID（可选，留空则自动识别置顶动态；支持 Opus 链接）',
+      cfg.oid || '');
     if (oidAns) {
       try {
         const r = await resolveCommentOid(oidAns, cfg.cookie);
@@ -264,20 +276,24 @@ async function main() {
     }
 
     if (!cfg.oid && !cfg.cookie) {
-      console.log(C.yellow('  ⚠ 未提供 Cookie 时自动识别置顶动态可能被风控（-352），届时程序会提示你补充。'));
+      console.log(C.yellow(hot
+        ? '  ⚠ 全账号检索需要 Cookie（匿名会被风控 -352）；可回头选「扫码模式」或填写单条动态链接'
+        : '  ⚠ 未提供 Cookie 时自动识别置顶动态可能被风控（-352），届时程序会提示你补充。'));
     }
 
-    // —— 监控行为 ——
-    section('监控行为');
-    if (!cfg.once) {
-      const iv = await ask('检查间隔（秒）', String(cfg.interval));
-      if (parseInt(iv, 10) >= 10) cfg.interval = parseInt(iv, 10);
+    // —— 监控行为（仅置顶监测模式；热评模式为一次性批量出图，无需间隔/动态监测） ——
+    if (!hot) {
+      section('监控行为');
+      if (!cfg.once) {
+        const iv = await ask('检查间隔（秒）', String(cfg.interval));
+        if (parseInt(iv, 10) >= 10) cfg.interval = parseInt(iv, 10);
+      }
+      cfg.trackDyn = await selectYN('同时监测普通动态更新（置顶未变但发了新动态时提示并出图）', cfg.trackDyn);
     }
-    cfg.trackDyn = await selectYN('同时监测普通动态更新（置顶未变但发了新动态时提示并出图）', cfg.trackDyn);
 
     // —— 卡片与输出 ——
-    section('卡片与输出');
-    cfg.showReplies = await selectYN('卡片上绘制精彩回复', cfg.showReplies);
+    section(hot ? '输出设置' : '卡片与输出');
+    if (!hot) cfg.showReplies = await selectYN('卡片上绘制精彩回复', cfg.showReplies);
     const outAns = await ask('输出目录', cfg.outDir);
     if (outAns) cfg.outDir = outAns;
     const nameAns = await ask('卡片标题显示名（留空自动取 UP 名）', cfg.upName || '');
@@ -293,11 +309,15 @@ async function main() {
     attach(null);
 
     // —— 配置汇总 ——
+    const cookieUid = String(cfg.cookie || '').match(/DedeUserID=(\d+)/)?.[1];
     console.log(`\n${C.pink('┌─ ')}${C.bold('配置完成')}${C.pink(` ${'─'.repeat(Math.max(2, 44 - displayWidth('配置完成') - 4))}┐`)}`);
-    summaryRow('目标', cfg.oid ? `动态 ${cfg.oid}` : `UID ${cfg.uid}${cfg.cookie ? '（已带 Cookie）' : '（匿名）'}`);
-    summaryRow('模式', cfg.once ? '单次检查' : `持续监控 · 每 ${cfg.interval}s`);
-    if (cfg.trackDyn) summaryRow('监测', '普通动态更新已开启');
-    if (cfg.showReplies) summaryRow('卡片', '含精彩回复');
+    summaryRow('目标', cfg.oid ? `动态 ${cfg.oid}` : `UID ${cfg.uid}`);
+    summaryRow('登录', cookieUid ? `UID ${cookieUid}（已登录）` : '匿名');
+    summaryRow('模式', hot
+      ? `UP 热评 TOP 卡 · 高赞区 ${cfg.upTop} 条/卡`
+      : (cfg.once ? '单次检查' : `持续监控 · 每 ${cfg.interval}s`));
+    if (!hot && cfg.trackDyn) summaryRow('监测', '普通动态更新已开启');
+    if (!hot && cfg.showReplies) summaryRow('卡片', '含精彩回复');
     summaryRow('输出', cfg.outDir);
     console.log(`\n${C.green('✔')} 开始运行，Ctrl+C 随时退出\n`);
   } else if (!cfg.oid && !cfg.cookie) {
@@ -305,10 +325,13 @@ async function main() {
     console.log(C.dim('未指定 --oid 且无 Cookie，尝试匿名自动识别置顶动态（可能被风控）...'));
   }
 
+  const modeTxt = cfg.upTop
+    ? `UP 热评 TOP 卡（高赞区 ${cfg.upTop} 条/卡）`
+    : (cfg.once ? '单次检查' : `每 ${cfg.interval}s 监控`);
   if (!cfg.quiet && !bannerShown) {
     console.log(BANNER);
     log(`${C.bold('目标:')} ${cfg.oid ? '动态 ' + cfg.oid : 'UID ' + cfg.uid}${cfg.cookie ? ' ' + C.dim('(已带 Cookie)') : C.dim(' (匿名)')}`);
-    log(`${C.bold('输出:')} ${cfg.outDir} · ${cfg.once ? '单次检查' : `每 ${cfg.interval}s 监控`}${cfg.force ? ' · 强制出图' : ''}${cfg.showReplies ? ' · 含精彩回复' : ''}`);
+    log(`${C.bold('输出:')} ${cfg.outDir} · ${modeTxt}${cfg.force ? ' · 强制出图' : ''}${cfg.showReplies && !cfg.upTop ? ' · 含精彩回复' : ''}`);
     log('');
   }
 
