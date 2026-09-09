@@ -139,6 +139,24 @@ const HELP = `
   node cli.js --uid 401315430 --cookie "SESSDATA=xxx; bili_jct=yyy" --watch -i 120
 `;
 
+// ====== 扫码登录（--login 与交互模式共用） ======
+/** 执行扫码登录并保存 Cookie；成功返回 { cookieStr, uname, mid }，失败抛出 */
+async function qrLogin(log) {
+  const { loginFlow } = require('./lib/login');
+  const { cookieStr, uname, mid } = await loginFlow({
+    log,
+    onStatus: (code) => {
+      // 只提示关键动作，避免 2.5s 一次的轮询刷屏
+      if (code === 86090) log(C.yellow(`已扫码！请在手机 B站 App 上点击「确认登录」`));
+      else if (code === 86038) log(C.yellow('二维码已失效，正在等待重新生成...'));
+    },
+  });
+  saveConfig({ ...loadConfig(), cookie: cookieStr });
+  log(`${C.green('✅ 登录成功:')} ${uname} (UID ${mid})`);
+  log(C.dim(`Cookie 已保存至 ${CFG_FILE}，后续命令自动沿用（有效期约 30 天，过期后重新 --login）`));
+  return { cookieStr, uname, mid };
+}
+
 // ====== 主流程 ======
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -146,20 +164,9 @@ async function main() {
 
   // ---- 扫码登录：独立执行，成功后保存 Cookie 并退出 ----
   if (args.login) {
-    const { loginFlow } = require('./lib/login');
     try {
       log(C.dim('正在生成登录二维码...'));
-      const { cookieStr, uname, mid } = await loginFlow({
-        log,
-        onStatus: (code, msg) => {
-          // 只提示关键动作，避免 2.5s 一次的轮询刷屏
-          if (code === 86090) log(C.yellow(`已扫码！请在手机 B站 App 上点击「确认登录」`));
-          else if (code === 86038) log(C.yellow('二维码已失效，正在等待重新生成...'));
-        },
-      });
-      saveConfig({ ...loadConfig(), cookie: cookieStr });
-      log(`${C.green('✅ 登录成功:')} ${uname} (UID ${mid})`);
-      log(C.dim(`Cookie 已保存至 ${CFG_FILE}，后续命令自动沿用（有效期约 30 天，过期后重新 --login）`));
+      await qrLogin(log);
     } catch (err) {
       console.error(C.red(`✗ 登录失败: ${err.message}`));
       process.exitCode = 1;
@@ -212,17 +219,39 @@ async function main() {
     const uidAns = await ask('目标 UP 主 UID', cfg.uid);
     cfg.uid = uidAns || DEFAULT_UID;
 
-    // Cookie 交互：已有保存的 Cookie 时明确提示（留空会沿用，输入 clear 清除回到匿名）
-    const cookieAns = await ask(
-      cfg.cookie
-        ? `SESSDATA Cookie（已保存，回车沿用；输入 ${C.yellow('clear')} 清除后匿名）`
-        : 'SESSDATA Cookie（可选，留空匿名；提供后可自动识别置顶动态）',
-      '');
-    if (cookieAns.trim().toLowerCase() === 'clear') {
+    // —— 登录方式：沿用已保存 / 扫码模式 / 匿名模式 ——
+    section('登录方式');
+    console.log(C.dim('  ↑/↓ 选择，回车确认'));
+    const cookieOpts = [];
+    if (cfg.cookie) {
+      const uidM = String(cfg.cookie).match(/DedeUserID=(\d+)/);
+      cookieOpts.push({
+        key: 'keep',
+        label: '沿用已保存 Cookie',
+        desc: uidM ? `已登录 UID ${uidM[1]}` : '回车直接沿用',
+      });
+      cookieOpts.push({ key: 'scan', label: '扫码模式', desc: '重新扫码登录刷新 Cookie（推荐）' });
+      cookieOpts.push({ key: 'anon', label: '匿名模式', desc: '清除已保存的 Cookie' });
+    } else {
+      cookieOpts.push({ key: 'anon', label: '匿名模式', desc: '无需登录，部分场景可能被风控（-352）' });
+      cookieOpts.push({ key: 'scan', label: '扫码模式', desc: '手机扫码登录，自动保存全新 Cookie（解锁全量评论，推荐）' });
+    }
+    const cookieMode = await select(cookieOpts, 0);
+    if (cookieMode === 'scan') {
+      try {
+        const { cookieStr } = await qrLogin(log);
+        cfg.cookie = cookieStr; // 本次运行立即生效（qrLogin 已持久化）
+      } catch (err) {
+        console.error(C.red(`  ✗ 扫码登录失败: ${err.message}，本次沿用原登录状态运行`));
+      }
+    } else if (cookieMode === 'anon') {
+      const hadCookie = !!cfg.cookie;
       cfg.cookie = '';
-      if (!cfg.quiet) log(C.dim('已清除已保存的 Cookie，本次以匿名运行'));
-    } else if (cookieAns) cfg.cookie = cookieAns;
+      if (!cfg.quiet) log(C.dim(hadCookie ? '已清除已保存的 Cookie，本次以匿名模式运行' : '本次以匿名模式运行'));
+    }
 
+    // —— 动态目标（链接解析需用上面确定的 Cookie） ——
+    section('动态目标');
     const oidAns = await ask('动态链接或 ID（可选，留空则自动识别置顶动态；支持 Opus 链接）', cfg.oid || '');
     if (oidAns) {
       try {
