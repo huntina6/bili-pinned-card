@@ -2,6 +2,21 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.7] - 2026-09-09
+
+### 修复
+- **普通命令未显式 `--up-top` 时不再默认进入 UP 热评模式**（P0）：`buildConfig` 旧逻辑 `saved.upTop ?? 10` 导致旧配置缺少 `upTop` 字段时默认 10，`checkOnce` 的 `if (cfg.upTop)` 恒真，置顶监控/交互模式/`--rpid` 出卡等普通命令全部误入热评分支；现改为默认关闭（0），仅 `--up-top [N]` 或已保存 `upTop` 才启用
+- 配置构建抽取为可测试的 `buildConfig(args, saved)`，`cli.js` 增加 `require.main === module` 守卫并导出 `{ parseArgs, buildConfig }`；新增 `test/cli.test.js`（5 用例）
+- `getAllSubReplies` 失败重试节流统一：任一页失败均间隔 1s 重试（此前仅首页有间隔）
+- `getReplies` 补 `web_location=333.788`（与全量子回复接口参数一致，防 B站 收紧单页限制）
+- `getAllTopComments` 回退老接口时返回 `fallback: true` 标记，CLI 输出提示（此前 wbi 异常回退完全静默）
+- 卡片渲染：`<image href>` 属性值统一走 `esc()` 转义（表情图 data URI）
+- 文件头版本注释同步（cli.js 曾残留 v1.2.3 字样）
+
+### 测试
+- 新增 `test/cli.test.js`（5 用例：upTop 默认关闭回归 / 显式参数 / 0 关闭 / 保存配置保留），总数 67 → 72
+- `test/wbi.test.js` 降级回退用例补充 `fallback` 断言
+
 ## [1.2.6] - 2026-09-02
 
 ### 修复（评论接口降级：老接口对 opus 评论区仅返回 3 条）

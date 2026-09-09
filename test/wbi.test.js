@@ -140,10 +140,11 @@ test('wbi 结果降级 → 回退 legacy 并保留标记', async (t) => {
     }
     return jsonRes({ code: -404 });
   });
-  const { replies, degraded, total } = await getAllTopComments('404135596', 11, 'cookie');
+  const { replies, degraded, total, fallback } = await getAllTopComments('404135596', 11, 'cookie');
   assert.strictEqual(degraded, true);
   assert.strictEqual(replies.length, 3);
   assert.strictEqual(total, 8809);
+  assert.strictEqual(fallback, true);
   _resetWbiCache();
 });
 
@@ -159,9 +160,10 @@ test('wbi 请求抛错（-352）→ 回退 legacy', async (t) => {
     if (u.includes('/x/v2/reply?')) return jsonRes({ code: 0, data: { replies: [mkReply(11), mkReply(12)], page: { count: 2 } } });
     return jsonRes({ code: -404 });
   });
-  const { replies, degraded } = await getAllTopComments('404135596', 11, 'cookie');
+  const { replies, degraded, fallback } = await getAllTopComments('404135596', 11, 'cookie');
   assert.strictEqual(degraded, false);
   assert.strictEqual(replies.length, 2);
+  assert.strictEqual(fallback, true); // wbi 抛错回退时应标记
   _resetWbiCache();
 });
 

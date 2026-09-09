@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.2.3 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.2.7 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法：
@@ -21,7 +21,7 @@ const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
 const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.6';
+const VERSION = '1.2.7';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
@@ -81,6 +81,30 @@ function parseArgs(argv) {
   return a;
 }
 
+/** 合并命令行与已保存配置，生成运行前静态配置；up-top 是一次性模式，未显式开启时默认关闭 */
+function buildConfig(args, saved = {}) {
+  return {
+    uid: args.uid || saved.uid || DEFAULT_UID,
+    uidExplicit: !!args.uid,
+    oid: args.oid ? String(args.oid) : (saved.oid || ''),
+    rpid: args.rpid ? String(args.rpid) : (saved.rpid || ''),
+    type: args.type != null ? parseInt(args.type, 10) : (saved.type || 11),
+    cookie: args.cookie != null ? args.cookie : (saved.cookie || ''),
+    upName: args.upName || saved.upName || '',
+    showReplies: args.showReplies != null ? args.showReplies : (saved.showReplies ?? false),
+    interval: args.interval != null ? parseInt(args.interval, 10) : (saved.interval || 60),
+    outDir: args.out || saved.outDir || path.join(process.cwd(), 'output'),
+    once: args.once,
+    force: args.force,
+    context: args.context,
+    upTop: args.upTop != null ? args.upTop : (saved.upTop ?? 0),
+    maxDyns: args.maxDyns != null ? args.maxDyns : (saved.maxDyns ?? Infinity),
+    yes: !!args.yes,
+    trackDyn: args.trackDyn != null ? args.trackDyn : (saved.trackDyn ?? false),
+    quiet: args.quiet,
+  };
+}
+
 const HELP = `
 用法: node cli.js [选项]
 
@@ -137,26 +161,7 @@ async function main() {
   }
 
   const saved = loadConfig();
-  const cfg = {
-    uid: args.uid || saved.uid || DEFAULT_UID,
-    uidExplicit: !!args.uid,
-    oid: args.oid ? String(args.oid) : (saved.oid || ''),
-    rpid: args.rpid ? String(args.rpid) : (saved.rpid || ''),
-    type: args.type != null ? parseInt(args.type, 10) : (saved.type || 11),
-    cookie: args.cookie != null ? args.cookie : (saved.cookie || ''),
-    upName: args.upName || saved.upName || '',
-    showReplies: args.showReplies != null ? args.showReplies : (saved.showReplies ?? false),
-    interval: args.interval != null ? parseInt(args.interval, 10) : (saved.interval || 60),
-    outDir: args.out || saved.outDir || path.join(process.cwd(), 'output'),
-    once: args.once,
-    force: args.force,
-    context: args.context,
-    upTop: args.upTop != null ? args.upTop : (saved.upTop ?? 10),
-    maxDyns: args.maxDyns != null ? args.maxDyns : (saved.maxDyns ?? Infinity),
-    yes: !!args.yes,
-    trackDyn: args.trackDyn != null ? args.trackDyn : (saved.trackDyn ?? false),
-    quiet: args.quiet,
-  };
+  const cfg = buildConfig(args, saved);
   // 裸参数 oid / rpid 可能是链接 → 提取数字 ID；opus 链接自动转换评论 oid
   if (cfg.oid) {
     const r = await resolveCommentOid(cfg.oid, cfg.cookie);
@@ -317,7 +322,11 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  console.error(C.red('致命错误: ' + (err?.message || err)));
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error(C.red('致命错误: ' + (err?.message || err)));
+    process.exit(1);
+  });
+}
+
+module.exports = { parseArgs, buildConfig };
