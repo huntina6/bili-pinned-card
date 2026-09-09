@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.2.8 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.2.9 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法：
@@ -21,7 +21,7 @@ const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
 const { checkOnce } = require('./lib/monitor');
 const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
 
-const VERSION = '1.2.8';
+const VERSION = '1.2.9';
 const BANNER = makeBanner(VERSION);
 
 // ====== 参数解析 ======
@@ -358,9 +358,16 @@ async function main() {
           console.log(res.file); // quiet 模式只输出文件路径（方便脚本取用）
         }
       } catch (err) {
-        if (err instanceof BiliError && (err.code === -352 || err.code === -412)) {
+        if (err instanceof BiliError && err.code === -101) {
+          console.log(C.red(`  ✗ Cookie 已失效 (-101)：${err.message}`));
+          console.log(C.yellow('  → 解决：运行 --login 重新扫码登录（Cookie 约 30 天有效）'));
+          if (cfg.once) { process.exitCode = 1; return; }
+        } else if (err instanceof BiliError && (err.code === -352 || err.code === -412)) {
+          const freqHint = cfg.cookie
+            ? '请求过于频繁被 B站 限流（本机 IP/指纹），请等待数分钟冷却后重试；程序已内置每次请求 1~2s 随机节流'
+            : '匿名请求被风控，建议 --login 扫码登录后重试，或直接指定动态 ID（--oid <动态ID>）';
           console.log(C.red(`  ⚠ 风控 (${err.code})：${err.message}`));
-          console.log(C.yellow(`  → 解决：提供 SESSDATA Cookie（--cookie "SESSDATA=xxx"）或直接指定动态 ID（--oid <动态ID>）`));
+          console.log(C.yellow(`  → ${freqHint}`));
           if (cfg.once) { process.exitCode = 1; return; }
         } else {
           console.log(C.red(`  ✗ 检查失败: ${err.message || err}`));

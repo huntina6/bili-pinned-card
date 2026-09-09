@@ -7,6 +7,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('crypto');
+// mock fetch 无真实网络，关闭请求层 1~2s 节流避免拖慢测试
+require('../lib/api/client').setThrottle(false);
 const { getMixinKey, getWbiKey, wbiQuery, _resetWbiCache } = require('../lib/api/wbi');
 const {
   isDegraded,
