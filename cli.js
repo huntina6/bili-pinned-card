@@ -10,7 +10,8 @@
  *   node cli.js --uid 401315430 --watch --interval 60
  *   node cli.js --help
  *
- * 模块结构：lib/ui（终端交互）/ lib/state（配置持久化）/ lib/monitor（核心检查）/ lib/api（B站 API）/ lib/card（卡片渲染）
+ * 模块结构：lib/args（参数解析）/ lib/interactive（交互引导）/ lib/watcher（监控循环）
+ *          lib/ui（终端样式）/ lib/state（配置持久化）/ lib/monitor（核心检查）/ lib/api（B站 API）/ lib/card（卡片渲染）
  */
 
 // 启动加速：Node >= 22.8 的编译缓存（旧版本静默跳过；仅直接运行 cli.js 时启用，避免被 require 时产生副作用）
@@ -18,155 +19,16 @@ if (require.main === module) {
   try { require('node:module').enableCompileCache?.(); } catch { /* 忽略 */ }
 }
 
-const path = require('path');
-const readline = require('readline');
-const ui = require('./lib/ui');
+const { C, makeBanner, log } = require('./lib/ui');
 const logger = require('./lib/logger');
-const { C, log, makeBanner, attach, ask, section, select, selectYN, summaryRow, displayWidth } = ui;
-const { extractId, resolveCommentOid, BiliError } = require('./lib/api');
-const { checkOnce } = require('./lib/monitor');
-const { loadConfig, saveConfig, DEFAULT_UID, CFG_FILE } = require('./lib/state');
+const { parseArgs, buildConfig, isNumericUid, HELP } = require('./lib/args');
+const { qrLogin, runInteractive } = require('./lib/interactive');
+const { runWatcher } = require('./lib/watcher');
+const { resolveCommentOid, extractId } = require('./lib/api');
+const { loadConfig } = require('./lib/state');
 
 const VERSION = '1.3.0';
 const BANNER = makeBanner(VERSION);
-
-// ====== 参数解析 ======
-/** 读取带值参数的值；缺失时输出错误并退出 */
-function argValue(argv, i, name) {
-  const v = argv[i + 1];
-  if (v === undefined) {
-    console.error(C.red(`参数 ${name} 缺少值，用法见 --help`));
-    process.exit(1);
-  }
-  return v;
-}
-function parseArgs(argv) {
-  const a = {
-    uid: null, oid: null, rpid: null, type: null, interval: null, out: null,
-    once: false, force: false, showReplies: null, cookie: null,
-    upName: null, quiet: false, trackDyn: null, context: false, help: false,
-    upTop: null, maxDyns: null, yes: false, login: false, verbose: false,
-  };
-  const set = (k, v) => { a[k] = v; };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    switch (arg) {
-      case '--uid': case '-u': set('uid', argValue(argv, i, arg)); i++; break;
-      case '--oid': set('oid', argValue(argv, i, arg)); i++; break;
-      case '--rpid': set('rpid', argValue(argv, i, arg)); i++; break;
-      case '--type': case '-t': set('type', argValue(argv, i, arg)); i++; break;
-      case '--interval': case '-i': set('interval', argValue(argv, i, arg)); i++; break;
-      case '--out': case '-o': set('out', argValue(argv, i, arg)); i++; break;
-      case '--cookie': case '-c': set('cookie', argValue(argv, i, arg)); i++; break;
-      case '--up-name': set('upName', argValue(argv, i, arg)); i++; break;
-      case '--up-top': {
-        // 可选数字参数：下一位为纯数字则作为 TOP N，否则默认 10
-        const next = argv[i + 1];
-        if (next !== undefined && /^\d+$/.test(next)) { set('upTop', parseInt(next, 10)); i++; }
-        else set('upTop', 10);
-        break;
-      }
-      case '--max-dyns': set('maxDyns', parseInt(argValue(argv, i, arg), 10)); i++; break;
-      case '--yes': set('yes', true); break;
-      case '--track-dyn': set('trackDyn', true); break;
-      case '--no-track-dyn': set('trackDyn', false); break;
-      case '--context': set('context', true); break;
-      case '--once': set('once', true); break;
-      case '--watch': set('once', false); break;
-      case '--force': set('force', true); break;
-      case '--login': set('login', true); break;
-      case '--show-replies': case '-r': set('showReplies', true); break;
-      case '--no-replies': set('showReplies', false); break;
-      case '--quiet': case '-q': set('quiet', true); break;
-      case '--verbose': case '-v': set('verbose', true); break;
-      case '--help': case '-h': set('help', true); break;
-      default:
-        if (arg.startsWith('--')) { console.error(C.red(`未知参数: ${arg}`)); process.exit(1); }
-        if (!a.oid) set('oid', arg); // 裸参数视为动态 ID
-    }
-  }
-  return a;
-}
-
-/** 合并命令行与已保存配置，生成运行前静态配置；up-top 是一次性模式，未显式开启时默认关闭 */
-function buildConfig(args, saved = {}) {
-  return {
-    uid: args.uid || saved.uid || DEFAULT_UID,
-    uidExplicit: !!args.uid,
-    oid: args.oid ? String(args.oid) : (saved.oid || ''),
-    rpid: args.rpid ? String(args.rpid) : (saved.rpid || ''),
-    type: args.type != null ? parseInt(args.type, 10) : (saved.type || 11),
-    cookie: args.cookie != null ? args.cookie : (saved.cookie || ''),
-    upName: args.upName || saved.upName || '',
-    showReplies: args.showReplies != null ? args.showReplies : (saved.showReplies ?? false),
-    interval: args.interval != null ? parseInt(args.interval, 10) : (saved.interval || 60),
-    outDir: args.out || saved.outDir || path.join(process.cwd(), 'output'),
-    once: args.once,
-    force: args.force,
-    context: args.context,
-    upTop: args.upTop != null ? args.upTop : (saved.upTop ?? 0),
-    maxDyns: args.maxDyns != null ? args.maxDyns : (saved.maxDyns ?? Infinity),
-    yes: !!args.yes,
-    trackDyn: args.trackDyn != null ? args.trackDyn : (saved.trackDyn ?? false),
-    quiet: args.quiet,
-  };
-}
-
-const HELP = `
-用法: node cli.js [选项]
-
-  （无参数）             交互模式：终端提示引导配置后持续监控
-  --oid <动态ID或链接>    直接指定动态（含其置顶评论），跳过自动识别
-  --rpid <评论ID或链接>   直接绘制指定评论的卡片（如旧的置顶评论，需配合 --oid）
-  --context              与 --rpid 联用：绘制该评论的 UP 互动回顾图（UP 回复/点赞对话链）
-  --up-top [N]            UP 热评 TOP 卡（默认 N=10）：配合 --oid 处理单条动态；
-                          配合 --uid 自动检索该账号全部动态（先询问确认，--yes 跳过）
-  --max-dyns <N>          模式 B（--uid + --up-top）最多处理的动态条数（默认不限制）
-  --yes                   非交互模式下跳过模式 B 的确认询问
-  --uid <UP主UID>         目标 UP 主（配合 Cookie 自动识别置顶动态）
-  --login                扫码登录：终端显示二维码，手机 B站 App 扫码后自动保存 Cookie
-  --cookie <SESSDATA>    登录 Cookie（可选）：解锁自动识别置顶动态，降低风控
-  --watch                持续监控（默认）
-  --once                 单次检查并出图后退出
-  --force                即使置顶评论未变化也重新出图
-  -r, --show-replies     卡片上绘制精彩回复（默认不画）
-  --track-dyn            同时监测普通动态更新：置顶未变但发了新动态时提示并出图
-  -i, --interval <秒>    监控间隔（默认 60，最短 10）
-  -o, --out <目录>       输出目录（默认 ./output）
-  -q, --quiet            安静模式（仅输出结果行）
-  -v, --verbose          详细日志：debug 级写入文件（每次 API 请求摘要/耗时），排障用
-  -h, --help             帮助
-
-  日志: 运行详情自动落盘 ~/.bili-pinned-card/logs/YYYY-MM-DD.log（保留 30 天）
-        Cookie/凭据不入日志；debug 级请求摘要需加 -v
-
-示例:
-  node cli.js --login                              # 扫码登录，自动保存 Cookie（推荐首次使用）
-  node cli.js --oid 404135596 --once --force
-  node cli.js --oid 404135596 --rpid 313406396048 --once   # 绘制指定评论（旧置顶等）
-  node cli.js --oid 404135596 --rpid 313406396048 --context --once   # 该评论的 UP 互动回顾图
-  node cli.js --oid 404135596 --up-top --once              # UP 热评 TOP 卡（单动态）
-  node cli.js --uid 401315430 --cookie "SESSDATA=xxx; bili_jct=yyy" --up-top --once   # 全账号动态自动检索出卡
-  node cli.js --uid 401315430 --cookie "SESSDATA=xxx; bili_jct=yyy" --watch -i 120
-`;
-
-// ====== 扫码登录（--login 与交互模式共用） ======
-/** 执行扫码登录并保存 Cookie；成功返回 { cookieStr, uname, mid }，失败抛出 */
-async function qrLogin(log) {
-  const { loginFlow } = require('./lib/login');
-  const { cookieStr, uname, mid } = await loginFlow({
-    log,
-    onStatus: (code) => {
-      // 只提示关键动作，避免 2.5s 一次的轮询刷屏
-      if (code === 86090) log(C.yellow(`已扫码！请在手机 B站 App 上点击「确认登录」`));
-      else if (code === 86038) log(C.yellow('二维码已失效，正在等待重新生成...'));
-    },
-  });
-  saveConfig({ ...loadConfig(), cookie: cookieStr });
-  log(`${C.green('✅ 登录成功:')} ${uname} (UID ${mid})`);
-  log(C.dim(`Cookie 已保存至 ${CFG_FILE}，后续命令自动沿用（有效期约 30 天，过期后重新 --login）`));
-  return { cookieStr, uname, mid };
-}
 
 // ====== 主流程 ======
 async function main() {
@@ -200,215 +62,23 @@ async function main() {
   if (!Number.isFinite(cfg.interval) || cfg.interval < 10) cfg.interval = 60;
   if (!Number.isFinite(cfg.type)) cfg.type = 11;
   // uid 必须是纯数字（拼入 API URL，脏值产生无效请求且无提示）
-  if (args.uid && !/^\d+$/.test(String(args.uid))) {
+  if (args.uid && !isNumericUid(args.uid)) {
     console.error(C.red(`--uid 必须是数字 UID，收到: ${args.uid}`));
     logger.error(`参数错误: --uid 非数字 (${args.uid})`);
     process.exit(1);
   }
-  if (saved.uid && !/^\d+$/.test(String(saved.uid))) {
+  if (saved.uid && !isNumericUid(saved.uid)) {
     console.error(C.red(`配置中的 uid 非法（${saved.uid}），请删除 ~/.bili-pinned-card/config.json 后重试`));
     logger.error(`配置错误: 已保存 uid 非法 (${saved.uid})`);
     process.exit(1);
   }
 
-  // ---- 交互模式：终端提示引导 ----
-  let bannerShown = false;
-  if (process.stdin.isTTY && !args.oid && args.cookie == null) {
-    console.log(BANNER);
-    bannerShown = true;
-    log(C.dim(`运行日志: ${logger.logDir()}（排障加 -v 记录每次 API 请求）`));
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    attach(rl);
+  // ---- 交互引导（TTY 下无 --oid 且未显式 --cookie 时；就地修改 cfg） ----
+  const inter = await runInteractive(cfg, { args, banner: BANNER });
+  if (inter.exit) return;
 
-    // —— 模式选择（↑/↓ 移动光标，回车确认） ——
-    section('运行模式');
-    console.log(C.dim('  ↑/↓ 选择，回车确认'));
-    const mode = await select([
-      { key: '1', label: '持续监控', desc: '置顶评论变化自动出图（默认）' },
-      { key: '2', label: '单次检查', desc: '立即检查置顶并出图一次' },
-      { key: '3', label: 'UP 热评 TOP 卡', desc: 'UP 的每条一级评论出一张卡' },
-      { key: '0', label: '退出', desc: '' },
-    ], 0);
-    if (mode === '0') { console.log('\n再见 👋'); rl.close(); attach(null); return; }
-    const hot = mode === '3'; // UP 热评 TOP 卡模式（一次性批量出图）
-    cfg.once = mode === '2' || hot;
-    if (hot) {
-      const nAns = await ask('每张卡的粉丝高赞区条数', '10');
-      cfg.upTop = Math.max(1, Math.min(50, parseInt(nAns, 10) || 10));
-    } else {
-      cfg.upTop = 0; // 交互未选热评时强制清零（防已保存配置残留误入热评分支）
-    }
-
-    // —— 目标设置 ——
-    section('目标设置');
-    const uidAns = await ask('目标 UP 主 UID', cfg.uid);
-    cfg.uid = uidAns || DEFAULT_UID;
-
-    // —— 登录方式：沿用已保存 / 扫码模式 / 匿名模式 ——
-    section('登录方式');
-    console.log(C.dim('  ↑/↓ 选择，回车确认'));
-    const cookieOpts = [];
-    if (cfg.cookie) {
-      const uidM = String(cfg.cookie).match(/DedeUserID=(\d+)/);
-      cookieOpts.push({
-        key: 'keep',
-        label: '沿用已保存 Cookie',
-        desc: uidM ? `已登录 UID ${uidM[1]}` : '回车直接沿用',
-      });
-      cookieOpts.push({ key: 'scan', label: '扫码模式', desc: '重新扫码登录刷新 Cookie（推荐）' });
-      cookieOpts.push({ key: 'anon', label: '匿名模式', desc: '清除已保存的 Cookie' });
-    } else {
-      cookieOpts.push({ key: 'anon', label: '匿名模式', desc: '无需登录，部分场景可能被风控（-352）' });
-      cookieOpts.push({ key: 'scan', label: '扫码模式', desc: '手机扫码登录，自动保存全新 Cookie（解锁全量评论，推荐）' });
-    }
-    const cookieMode = await select(cookieOpts, 0);
-    if (cookieMode === 'scan') {
-      try {
-        const { cookieStr } = await qrLogin(log);
-        cfg.cookie = cookieStr; // 本次运行立即生效（qrLogin 已持久化）
-      } catch (err) {
-        console.error(C.red(`  ✗ 扫码登录失败: ${err.message}，本次沿用原登录状态运行`));
-        logger.error(`交互扫码登录失败: ${err.message}`);
-      }
-    } else if (cookieMode === 'anon') {
-      const hadCookie = !!cfg.cookie;
-      cfg.cookie = '';
-      if (!cfg.quiet) log(C.dim(hadCookie ? '已清除已保存的 Cookie，本次以匿名模式运行' : '本次以匿名模式运行'));
-    }
-
-    // —— 动态目标（链接解析需用上面确定的 Cookie） ——
-    section('动态目标');
-    const oidAns = await ask(
-      hot
-        ? '动态链接或 ID（推荐填单条动态；留空则检索该 UP 全账号动态，逐条确认处理）'
-        : '动态链接或 ID（可选，留空则自动识别置顶动态；支持 Opus 链接）',
-      cfg.oid || '');
-    if (oidAns) {
-      try {
-        const r = await resolveCommentOid(oidAns, cfg.cookie);
-        cfg.oid = r.oid;
-        if (r.type != null) cfg.type = r.type;
-      } catch (e) {
-        console.log(C.red(`  ✗ 链接解析失败: ${e.message}，请检查后重试`));
-        logger.error(`链接解析失败: ${e.message}`);
-      }
-    }
-
-    if (!cfg.oid && !cfg.cookie) {
-      console.log(C.yellow(hot
-        ? '  ⚠ 全账号检索需要 Cookie（匿名会被风控 -352）；可回头选「扫码模式」或填写单条动态链接'
-        : '  ⚠ 未提供 Cookie 时自动识别置顶动态可能被风控（-352），届时程序会提示你补充。'));
-    }
-
-    // —— 监控行为（仅置顶监测模式；热评模式为一次性批量出图，无需间隔/动态监测） ——
-    if (!hot) {
-      section('监控行为');
-      if (!cfg.once) {
-        const iv = await ask('检查间隔（秒）', String(cfg.interval));
-        if (parseInt(iv, 10) >= 10) cfg.interval = parseInt(iv, 10);
-      }
-      cfg.trackDyn = await selectYN('同时监测普通动态更新（置顶未变但发了新动态时提示并出图）', cfg.trackDyn);
-    }
-
-    // —— 卡片与输出 ——
-    section(hot ? '输出设置' : '卡片与输出');
-    if (!hot) cfg.showReplies = await selectYN('卡片上绘制精彩回复', cfg.showReplies);
-    const outAns = await ask('输出目录', cfg.outDir);
-    if (outAns) cfg.outDir = outAns;
-    const nameAns = await ask('卡片标题显示名（留空自动取 UP 名）', cfg.upName || '');
-    if (nameAns) cfg.upName = nameAns;
-
-    // 保存配置（Cookie 也保存，下次免输；注意保管本机安全）
-    saveConfig({
-      uid: cfg.uid, oid: cfg.oid, type: cfg.type, cookie: cfg.cookie,
-      upName: cfg.upName, showReplies: cfg.showReplies,
-      interval: cfg.interval, outDir: cfg.outDir, trackDyn: cfg.trackDyn,
-    });
-    rl.close();
-    attach(null);
-
-    // —— 配置汇总 ——
-    const cookieUid = String(cfg.cookie || '').match(/DedeUserID=(\d+)/)?.[1];
-    console.log(`\n${C.pink('┌─ ')}${C.bold('配置完成')}${C.pink(` ${'─'.repeat(Math.max(2, 44 - displayWidth('配置完成') - 4))}┐`)}`);
-    summaryRow('目标', cfg.oid ? `动态 ${cfg.oid}` : `UID ${cfg.uid}`);
-    summaryRow('登录', cookieUid ? `UID ${cookieUid}（已登录）` : '匿名');
-    summaryRow('模式', hot
-      ? `UP 热评 TOP 卡 · 高赞区 ${cfg.upTop} 条/卡`
-      : (cfg.once ? '单次检查' : `持续监控 · 每 ${cfg.interval}s`));
-    if (!hot && cfg.trackDyn) summaryRow('监测', '普通动态更新已开启');
-    if (!hot && cfg.showReplies) summaryRow('卡片', '含精彩回复');
-    summaryRow('输出', cfg.outDir);
-    console.log(`\n${C.green('✔')} 开始运行，Ctrl+C 随时退出\n`);
-  } else if (!cfg.oid && !cfg.cookie) {
-    // 非交互且无 oid：尝试匿名自动识别（可能被风控）
-    console.log(C.dim('未指定 --oid 且无 Cookie，尝试匿名自动识别置顶动态（可能被风控）...'));
-  }
-
-  const modeTxt = cfg.upTop
-    ? `UP 热评 TOP 卡（高赞区 ${cfg.upTop} 条/卡）`
-    : (cfg.once ? '单次检查' : `每 ${cfg.interval}s 监控`);
-  if (!cfg.quiet && !bannerShown) {
-    console.log(BANNER);
-    log(C.dim(`运行日志: ${logger.logDir()}（排障加 -v 记录每次 API 请求）`));
-    log(`${C.bold('目标:')} ${cfg.oid ? '动态 ' + cfg.oid : 'UID ' + cfg.uid}${cfg.cookie ? ' ' + C.dim('(已带 Cookie)') : C.dim(' (匿名)')}`);
-    log(`${C.bold('输出:')} ${cfg.outDir} · ${modeTxt}${cfg.force ? ' · 强制出图' : ''}${cfg.showReplies && !cfg.upTop ? ' · 含精彩回复' : ''}`);
-    log('');
-  }
-
-  // ---- 执行 ----
-  let running = true;
-  const stopped = () => { running = false; };
-
-  if (process.stdin.isTTY) {
-    process.on('SIGINT', () => {
-      console.log('');
-      log(C.yellow('收到 Ctrl+C，正在退出...'));
-      stopped();
-      setTimeout(() => process.exit(0), 100);
-    });
-  }
-
-  const loop = async () => {
-    while (running) {
-      const t0 = Date.now();
-      try {
-        const res = await checkOnce(cfg);
-        if (res.event === 'error') break; // 参数错误（如 --rpid 缺 --oid），继续循环只会重复报错
-        if (res.file && cfg.quiet) {
-          console.log(res.file); // quiet 模式只输出文件路径（方便脚本取用）
-        }
-      } catch (err) {
-        if (err instanceof BiliError && err.code === -101) {
-          console.log(C.red(`  ✗ Cookie 已失效 (-101)：${err.message}`));
-          logger.error(`Cookie 失效 (-101): ${err.message}`);
-          console.log(C.yellow('  → 解决：运行 --login 重新扫码登录（Cookie 约 30 天有效）'));
-          if (cfg.once) { process.exitCode = 1; return; }
-        } else if (err instanceof BiliError && (err.code === -352 || err.code === -412 || err.code === -799)) {
-          const freqHint = cfg.cookie
-            ? '请求过于频繁被 B站 限流（本机 IP/指纹），请等待数分钟冷却后重试；程序已内置每次请求 1~2s 随机节流'
-            : '匿名请求被风控，建议 --login 扫码登录后重试，或直接指定动态 ID（--oid <动态ID>）';
-          console.log(C.red(`  ⚠ 风控 (${err.code})：${err.message}`));
-          logger.warn(`风控 (${err.code}): ${err.message}`);
-          console.log(C.yellow(`  → ${freqHint}`));
-          if (cfg.once) { process.exitCode = 1; return; }
-        } else {
-          console.log(C.red(`  ✗ 检查失败: ${err.message || err}`));
-          logger.error(`检查失败: ${err.message || err}`);
-        }
-      }
-
-      if (cfg.once || !running) break;
-      const elapsed = Date.now() - t0;
-      const wait = Math.max(1, cfg.interval * 1000 - elapsed);
-      if (!cfg.quiet) log(C.dim(`下次检查: ${new Date(Date.now() + wait).toLocaleTimeString('zh-CN', { hour12: false })}`));
-      await new Promise(r => setTimeout(r, wait));
-    }
-  };
-
-  await loop();
-  if (cfg.once) {
-    console.log(C.dim('单次检查完成。'));
-  }
+  // ---- 执行监控 ----
+  await runWatcher(cfg, { bannerShown: inter.ran, banner: BANNER });
 }
 
 if (require.main === module) {

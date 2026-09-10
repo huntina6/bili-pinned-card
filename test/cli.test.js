@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseArgs, buildConfig } = require('../cli');
+const { parseArgs, buildConfig } = require('../lib/args');
 
 test('普通命令未显式 --up-top：旧配置缺 upTop 字段时默认关闭（回归）', () => {
   const args = parseArgs(['--oid', '404135596', '--once']);
