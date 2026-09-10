@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "module": "node16",
+    "target": "es2022",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["types.d.ts", "lib/**/*.js", "cli.js"],
+  "exclude": ["node_modules", "output", "test"]
+}
