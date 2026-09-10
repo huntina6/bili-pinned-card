@@ -13,6 +13,11 @@
  * 模块结构：lib/ui（终端交互）/ lib/state（配置持久化）/ lib/monitor（核心检查）/ lib/api（B站 API）/ lib/card（卡片渲染）
  */
 
+// 启动加速：Node >= 22.8 的编译缓存（旧版本静默跳过；仅直接运行 cli.js 时启用，避免被 require 时产生副作用）
+if (require.main === module) {
+  try { require('node:module').enableCompileCache?.(); } catch { /* 忽略 */ }
+}
+
 const path = require('path');
 const readline = require('readline');
 const ui = require('./lib/ui');
@@ -378,7 +383,7 @@ async function main() {
           logger.error(`Cookie 失效 (-101): ${err.message}`);
           console.log(C.yellow('  → 解决：运行 --login 重新扫码登录（Cookie 约 30 天有效）'));
           if (cfg.once) { process.exitCode = 1; return; }
-        } else if (err instanceof BiliError && (err.code === -352 || err.code === -412)) {
+        } else if (err instanceof BiliError && (err.code === -352 || err.code === -412 || err.code === -799)) {
           const freqHint = cfg.cookie
             ? '请求过于频繁被 B站 限流（本机 IP/指纹），请等待数分钟冷却后重试；程序已内置每次请求 1~2s 随机节流'
             : '匿名请求被风控，建议 --login 扫码登录后重试，或直接指定动态 ID（--oid <动态ID>）';
