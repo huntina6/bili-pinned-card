@@ -7,9 +7,16 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('crypto');
-// mock fetch 无真实网络，关闭请求层 1~2s 节流避免拖慢测试
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+// mock fetch 无真实网络，关闭请求层节流避免拖慢测试
 require('../lib/api/client').setThrottle(false);
-const { getMixinKey, getWbiKey, wbiQuery, _resetWbiCache } = require('../lib/api/wbi');
+const { getMixinKey, getWbiKey, wbiQuery, setDir, _resetWbiCache } = require('../lib/api/wbi');
+// 文件缓存隔离到临时目录（不触碰真实 ~/.bili-pinned-card/wbi.json）
+const WBI_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bpc-wbi-'));
+setDir(WBI_TMP);
+test.after(() => { try { fs.rmSync(WBI_TMP, { recursive: true, force: true }); } catch { /* 忽略 */ } });
 const {
   isDegraded,
   buildPaginationStr,
@@ -187,4 +194,47 @@ test('getAllSubReplies URL 含 web_location=333.788 且失败重试', async (t) 
   assert.strictEqual(replies.length, 1);
   assert.ok(urls[0].includes('web_location=333.788'), '应带 web_location: ' + urls[0]);
   assert.ok(urls.length >= 2, '失败后应重试');
+});
+
+// ====== WBI 文件缓存（12h 跨进程） ======
+test('getWbiKey 文件缓存：新进程读文件命中（不再请求 nav）', async (t) => {
+  _resetWbiCache();
+  let navCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (String(url).includes('/x/web-interface/nav')) { navCalls++; return navRes(); }
+    return jsonRes({ code: -404 });
+  });
+  // 第一次：拉取并写文件
+  const k1 = await getWbiKey('c');
+  assert.strictEqual(k1, FIXED_MIXIN);
+  assert.strictEqual(navCalls, 1);
+  assert.ok(fs.existsSync(path.join(WBI_TMP, 'wbi.json')), '应写出 wbi.json');
+  // 模拟新进程：仅清内存（保留文件）→ 应命中文件，不再请求 nav
+  _resetWbiCache({ keepFile: true });
+  const k2 = await getWbiKey('c');
+  assert.strictEqual(k2, FIXED_MIXIN);
+  assert.strictEqual(navCalls, 1, '文件命中不应再请求 nav');
+  _resetWbiCache();
+});
+
+test('文件缓存过期 / 损坏 → 回退 nav 重建', async (t) => {
+  _resetWbiCache();
+  let navCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (String(url).includes('/x/web-interface/nav')) { navCalls++; return navRes(); }
+    return jsonRes({ code: -404 });
+  });
+  fs.mkdirSync(WBI_TMP, { recursive: true });
+  // 过期文件
+  fs.writeFileSync(path.join(WBI_TMP, 'wbi.json'), JSON.stringify({ mixinKey: 'stale', expireAt: Date.now() - 1000 }));
+  const k1 = await getWbiKey('c');
+  assert.strictEqual(k1, FIXED_MIXIN);
+  assert.strictEqual(navCalls, 1, '过期文件应回退 nav');
+  // 损坏文件
+  _resetWbiCache({ keepFile: true });
+  fs.writeFileSync(path.join(WBI_TMP, 'wbi.json'), 'not-json{{{');
+  const k2 = await getWbiKey('c');
+  assert.strictEqual(k2, FIXED_MIXIN);
+  assert.strictEqual(navCalls, 2, '损坏文件应回退 nav');
+  _resetWbiCache();
 });

@@ -8,10 +8,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node-version: [18, 20, 22]
+        include:
+          # Windows / macOS 各跑一个版本：验证 @resvg/resvg-js 预编译二进制的跨平台可用性
+          - os: windows-latest
+            node-version: 22
+          - os: macos-latest
+            node-version: 22
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +37,10 @@ jobs:
 
       - name: Syntax check
         run: npm run check
+
+      - name: Typecheck (JSDoc)
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
+        run: npm run typecheck
 
   security-scan:
     runs-on: ubuntu-latest
