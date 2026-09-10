@@ -191,8 +191,10 @@ node cli.js --uid 401315430 --cookie "SESSDATA=xxx" --watch -i 300 -q
 ## 开发与验证
 
 ```bash
-npm test        # 26 个单元测试（node:test 零依赖）
-npm run check   # 全部 JS 语法检查（跨平台）
+npm test          # 99 个单元测试（node:test 零依赖，无网络）
+npm run check     # 全部 JS/脚本语法检查（跨平台）
+npm run typecheck # JSDoc 类型检查（tsc --noEmit，零错误）
+npm run smoke     # 冒烟测试：真实网络「拉评论 → 渲染 → 出 PNG」全链路（约 3s）
 
 # 像素级验证卡片布局（头像可见 / 正文对齐 / 统计栏区域）
 node scripts/verify-pixels.js output/latest.png
@@ -201,17 +203,27 @@ node scripts/verify-pixels.js output/latest.png
 node scripts/export-svg.js [oid] [输出路径]
 ```
 
+CI（GitHub Actions）三平台矩阵：ubuntu × Node 18/20/22 + windows/macos × Node 22，含语法检查、类型检查与敏感信息扫描。
+
 ## 项目结构
 
 ```
 bili-pinned-card/
-├── cli.js                  # 入口：参数解析、终端交互、监控循环、状态管理
-├── lib/api.js              # B站 API 层（buvid 风控、Cookie 合并、评论/回复/图片/尺寸解析）
-├── lib/card.js             # SVG 卡片布局 + resvg 渲染 PNG（置顶卡/互动回顾/动态更新）
-├── scripts/
-│   ├── verify-pixels.js    # PNG 像素检查（头像/正文布局验证）
-│   └── export-svg.js       # 导出卡片 SVG 源码
-├── test/card.test.js       # 单元测试（含渲染回归测试）
+├── cli.js                  # 入口装配：参数 → 交互 → 监控（约 90 行）
+├── lib/
+│   ├── args.js             # 参数解析 / buildConfig / HELP
+│   ├── interactive.js      # 交互式配置引导 + 扫码登录（qrLogin）
+│   ├── watcher.js          # 监控主循环 + 错误分类
+│   ├── monitor.js          # 核心检查（置顶变化 / 热评卡 / 动态更新）
+│   ├── login.js            # 扫码登录（passport + crossDomain ticket 兑换）
+│   ├── logger.js           # 文件日志（按天滚动 + 敏感脱敏）
+│   ├── state.js            # 配置/状态持久化（原子写）
+│   ├── ui.js / card.js / png.js
+│   ├── api/                # client（节流/风控）/ wbi（签名缓存）/ comment / dynamic / image / util
+│   └── card/               # constants / text / image / layout / templates
+├── scripts/                # smoke / verify-pixels / export-svg / collect-comment-styles
+├── test/                   # 6 个测试文件（99 用例，node:test）
+├── types.d.ts              # JSDoc 全局类型（CliConfig）
 └── output/                 # 出图目录（运行时生成）
 ```
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.3.0 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.4.0 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法：
@@ -27,7 +27,7 @@ const { runWatcher } = require('./lib/watcher');
 const { resolveCommentOid, extractId } = require('./lib/api');
 const { loadConfig } = require('./lib/state');
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const BANNER = makeBanner(VERSION);
 
 // ====== 主流程 ======

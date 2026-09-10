@@ -2,6 +2,22 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-09-10
+
+### 新增
+- **启动与加载优化**：`@resvg/resvg-js` 惰性加载（`--help`/`--login`/交互配置阶段不再加载原生二进制）；`enableCompileCache` 启用 Node ≥ 22.8 编译缓存（旧版静默跳过，仅直接运行 cli.js 时生效）
+- **请求节流升级**：均匀随机 → 正态分布（Box-Muller）+ 按 URL 自动分档——子回复翻页均值 2s / 评论列表 1.5s / 动态检索 3s（最保守），降低风控触发概率；`setRng` 可注入（测试）
+- **WBI 密钥文件缓存**：内存 1h + 文件 12h（`~/.bili-pinned-card/wbi.json`）跨进程复用，减少 nav 请求暴露；文件丢失/损坏/过期自动回退
+- **冒烟测试** `npm run smoke`：真实网络「拉评论 → 渲染 → 出 PNG」全链路（输出到临时目录，不污染 output/）
+- **JSDoc 类型检查**：`npm run typecheck`（tsc --noEmit 零错误）；`types.d.ts` 定义 CliConfig 等全局类型；devDependencies 仅工具链（typescript/@types/node/@types/qrcode），运行时依赖零新增
+- **可维护性重构**：cli.js 拆分 423 → 92 行——`lib/args.js`（参数解析/配置构建）、`lib/interactive.js`（交互引导 + 扫码登录）、`lib/watcher.js`（监控循环 + 错误分类 `classifyError`）
+
+### 变更
+- 配置与状态持久化改为**原子写**（临时文件 + rename，Windows 回退 + 直写兜底）：断电/崩溃不再产生半截文件
+- CI 升级三平台矩阵：ubuntu × Node 18/20/22 + windows/macos × Node 22（验证 resvg 预编译二进制跨平台）；新增 typecheck 步骤
+- `-799`（请求过频）与 -352/-412 同档风控提示
+- 图片下载失败 URL 记入日志（去重防刷屏），便于排查
+
 ## [1.3.0] - 2026-09-09
 
 ### 新增
