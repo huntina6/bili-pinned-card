@@ -238,3 +238,55 @@ test('文件缓存过期 / 损坏 → 回退 nav 重建', async (t) => {
   assert.strictEqual(navCalls, 2, '损坏文件应回退 nav');
   _resetWbiCache();
 });
+
+// ====== legacy 分页终止条件（v1.4.1：count 判定 + 短页兜底） ======
+test('legacy 分页：单页不足 20 条即结束（不因 count 巨大而空转）', async (t) => {
+  _resetWbiCache();
+  const mkReply = (rpid) => ({ rpid, mid: 1, root: 0, parent: 0, ctime: 1, like: 0, content: { message: 'x' }, member: { uname: 'u', avatar: '' } });
+  let legacyCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const u = String(url);
+    if (u.includes('/x/frontend/finger/spi')) return jsonRes({ code: 0, data: { b_3: 'B3', b_4: 'B4' } });
+    if (u.includes('/x/web-interface/nav')) return navRes();
+    // wbi 直接失败 → 走 legacy
+    if (u.includes('/x/v2/reply/wbi/main')) return jsonRes({ code: -352, message: '风控' });
+    if (u.includes('/x/v2/reply?')) {
+      legacyCalls++;
+      // 每页只回 3 条但 count 报 8809（opus 降级特征）→ 必须在第 1 页就停，不空转
+      return jsonRes({ code: 0, data: { replies: [mkReply(1), mkReply(2), mkReply(3)], page: { count: 8809 } } });
+    }
+    return jsonRes({ code: -404 });
+  });
+  const { replies, total, fallback } = await getAllTopComments('404135596', 11, 'cookie');
+  assert.strictEqual(fallback, true);
+  assert.strictEqual(replies.length, 3);
+  assert.strictEqual(total, 8809);
+  assert.strictEqual(legacyCalls, 1, '短页应立即停止，不应翻满 maxPages');
+  _resetWbiCache();
+});
+
+test('legacy 分页：满页（20 条）时继续翻页，累计达 count 后停止', async (t) => {
+  _resetWbiCache();
+  const mkReply = (rpid) => ({ rpid, mid: 1, root: 0, parent: 0, ctime: 1, like: 0, content: { message: 'x' }, member: { uname: 'u', avatar: '' } });
+  let legacyCalls = 0;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const u = String(url);
+    if (u.includes('/x/frontend/finger/spi')) return jsonRes({ code: 0, data: { b_3: 'B3', b_4: 'B4' } });
+    if (u.includes('/x/web-interface/nav')) return navRes();
+    if (u.includes('/x/v2/reply/wbi/main')) return jsonRes({ code: -352, message: '风控' });
+    if (u.includes('/x/v2/reply?')) {
+      legacyCalls++;
+      // 第 1 页满 20 条（count=25）→ 应继续；第 2 页 5 条 → 达总量，结束
+      if (legacyCalls === 1) {
+        return jsonRes({ code: 0, data: { replies: Array.from({ length: 20 }, (_, i) => mkReply(100 + i)), page: { count: 25 } } });
+      }
+      return jsonRes({ code: 0, data: { replies: Array.from({ length: 5 }, (_, i) => mkReply(200 + i)), page: { count: 25 } } });
+    }
+    return jsonRes({ code: -404 });
+  });
+  const { replies, total } = await getAllTopComments('404135596', 11, 'cookie');
+  assert.strictEqual(total, 25);
+  assert.strictEqual(replies.length, 25, '应翻到第 2 页凑满 count');
+  assert.strictEqual(legacyCalls, 2);
+  _resetWbiCache();
+});

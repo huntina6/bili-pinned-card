@@ -2,6 +2,31 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.1] - 2026-09-10
+
+### 修复
+- **输入行为一致性（P1）**：`resolveCommentOid` 此前对**裸动态 ID 数字**直接透传（不做 oid 转换），而链接输入会查详情转换——导致同一条动态用链接输 vs 用裸数字输结果不一致（评论 oid ≠ 动态 ID，会拉到空评论区且**不报错**，静默出 0 张卡）。
+  - 新增 `isBareDynamicId()`：按 **length 15~19 位**区分动态 ID 与评论 oid（评论 oid 为 9-12 位；20 位 App 新 ID 超 int64 不尝试转换）
+  - 裸数字与链接走**同一条**转换路径；转换失败（-400 / 风控 / 无 item）时**安全回退透传**，保证 `--oid 404135596` 等既有用法零影响（评论 oid 输入仍**零请求**透传）
+- **置顶评论 null 归因（P1）**：`getPinnedComment` 对「确实没有置顶评论」与「拉取失败/对象已删除」都返回 `null`，`monitor` 一律判为「已取消置顶」→ 出无意义的空回顾图，并把 `state.json` 的 `lastRpid` 清空（状态污染，下次真变化无法检测）。
+  - `getPinnedComment` 新增可选 `{ withReason: true }`，返回 `{ comment, reason }`：`ok` / `none` / `empty`（可判定取消置顶）、`notfound`（-404 动态已删）、风控 `-352/-412` **改为抛出**而非静默
+  - `monitor` 按归因分流：非「真取消置顶」时**不出图、不写 state**，并输出明确的跳过提示（`state 已保留，未污染`）
+  - 修正 `rpidChanged` 在 `comment === null` 时的误判（空值哨兵比较），避免置顶空窗期每次都误判为「变化」
+- **死代码修复**：`resolveCommentOid` 的 -400 友好错误判断原用 `/^-400/.test(err.message)`，而 `apiGet` 抛出的 message 形如 `API code=-400: ...`，该分支**永不命中**（用户始终看到裸 API 错误）。改用 `err.code === -400` 数值判断。
+- **`-403` 未归类（P1）**：`-403`（WBI 签名缺失/错误或权限不足）此前落入「其他错误」分支，用户只见裸报错、无处置指引。
+  - 2026-09-10 实测确认：无签名请求 `/x/v2/reply/wbi/main` 返回 `-403 访问权限不足`
+  - 统一收敛到 `RISK_CODES = [-352, -403, -412, -509, -799]`（`lib/api/client.js` 导出），`httpJson` 记录 warn 日志、`apiGet` 抛出同类 `BiliError`
+  - `classifyError` 新增 `risk` 覆盖 `-403/-509`，并新增 `expired`（`-658` Token 过期）；`runWatcher` 为 `-403` 给出**签名类专属提示**（刷新 Cookie / 检查系统时间），而非误导性的「请求过于频繁」
+- **`-658` Token 过期未处理**：新增 `expired` 分类与独立提示（引导重新 `--login`），并在 `apiGet` 抛出可识别错误
+- **交互模式链接解析失败静默继续（P1）**：`runInteractive` 中 `resolveCommentOid` 抛错后仅打印日志、不阻断，`cfg.oid` 会**静默保留上一次的旧值** → 用户以为在监控新目标，实际监控的是旧目标。改为**明确中止运行**（关闭 readline + 退出），提示重新执行。
+- **legacy 分页终止条件**：原仅凭 `replies.length < 20` 判终止，在「服务端单页截断但总量未拉完」时会提前退出（漏评论）。改为「本页不足 20 条 **或** 累计达 `page.count` 权威总量」双条件，并保留短页兜底（避免 opus 降级场景下按巨大 count 空转翻页、徒增风控风险）。
+
+### 测试
+- 新增 `test/resolve-oid.test.js`（19 用例）：覆盖裸数字/链接一致性、评论 oid 零请求透传、转换失败安全回退、链接失败仍抛错、`getPinnedComment` 五种 `reason` 归因、旧签名向后兼容
+- `test/watcher.test.js` 扩充：`-403`/`-509` → `risk`、`-658` → `expired`、`RISK_CODES` 与 `classifyError` 一致性校验
+- `test/wbi.test.js` 扩充：legacy 分页「短页立即停止（不空转）」与「满页继续翻页至 `count`」两个守护用例
+- 测试用例总数 **99 → 124**；`npm run check` 清单补入 `test/resolve-oid.test.js`
+
 ## [1.4.0] - 2026-09-10
 
 ### 新增
