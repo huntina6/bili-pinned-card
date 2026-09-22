@@ -151,7 +151,7 @@ footer .mt { margin-top: 8px; }
     <span class="badge">纯 Node.js · 零浏览器依赖 · MIT 开源</span>
     <h1>B站置顶评论监测 + <span class="pink">自动出图</span></h1>
     <p class="sub">置顶评论变化，即生成精美卡片图</p>
-    <p class="tagline">置顶换新 · 取消置顶 · UP 互动回顾 · 动态更新 —— 全自动识别，全平台运行</p>
+    <p class="tagline">置顶换新 · 取消置顶 · UP 互动回顾 · 动态更新 —— 彩色 emoji · 自定义分辨率 · 全平台运行</p>
     <div class="cta">
       <a class="btn btn-primary" href="#quickstart">快速开始</a>
       <a class="btn btn-ghost" href="https://github.com/huntina6/bili-pinned-card/releases" target="_blank">查看 Releases</a>
@@ -201,6 +201,21 @@ footer .mt { margin-top: 8px; }
           <h3>可挂 cron</h3>
           <p>命令行模式支持 --uid/--oid/--cookie/--watch，配置持久化，安静模式适配脚本。</p>
         </div>
+        <div class="card">
+          <div class="ic">🎨</div>
+          <h3>自定义分辨率</h3>
+          <p>1x/2x/3x 或任意宽度（340–4080px）自由选择；Unicode emoji 转 Twemoji 彩色内联图，图床缩略图加速（头像 65KB→约 2KB），超长卡片自动高度预算。</p>
+        </div>
+        <div class="card">
+          <div class="ic">🛡</div>
+          <h3>风控友好</h3>
+          <p>请求节流 + 风控自适应退避、浏览器风格请求头、bili_ticket 风控票据；扫码 / 游客 / 手动 Cookie 三种登录方式。</p>
+        </div>
+        <div class="card">
+          <div class="ic">🧭</div>
+          <h3>交互向导</h3>
+          <p>登录状态前置与能力提示、UID/间隔/宽度等校验重问、Cookie 掩码输入；单次任务完成后可返回菜单再运行。</p>
+        </div>
       </div>
     </div>
   </section>
@@ -244,6 +259,8 @@ footer .mt { margin-top: 8px; }
       <div class="code"><span class="hl">node cli.js</span> --uid 401315430 --cookie <span class="cm">"SESSDATA=xxx"</span> --up-top --once</div>
       <div class="cmd-title">持续监控（需 B站 Cookie）</div>
       <div class="code"><span class="hl">node cli.js</span> --uid 401315430 --cookie <span class="cm">"SESSDATA=xxx; bili_jct=yyy"</span> --watch -i 60</div>
+      <div class="cmd-title">自定义分辨率（默认 2x，可 1x/3x 或任意宽度）</div>
+      <div class="code"><span class="hl">node cli.js</span> --oid 404135596 --once <span class="hl">--width 2040</span></div>
       <div class="cmd-title">主要参数</div>
       <table>
         <tr><th>参数</th><th>说明</th></tr>
@@ -257,6 +274,11 @@ footer .mt { margin-top: 8px; }
         <tr><td>--cookie</td><td>登录 Cookie（可选）：完整子回复 + 降低风控</td></tr>
         <tr><td>--watch / --once</td><td>持续监控 / 单次检查</td></tr>
         <tr><td>--track-dyn</td><td>同时监测普通动态更新</td></tr>
+        <tr><td>--scale / --width</td><td>渲染倍率（默认 2，0.5~6）/ 自定义输出宽度像素（340~4080，优先）</td></tr>
+        <tr><td>--force</td><td>强制重新出图（忽略已出图状态）</td></tr>
+        <tr><td>--no-emoji</td><td>关闭 Unicode emoji 彩色化（默认 Twemoji 内联图）</td></tr>
+        <tr><td>-r / -i / -o</td><td>卡片绘制精彩回复 / 监控间隔（默认 60s）/ 输出目录（默认项目目录 output）</td></tr>
+        <tr><td>-q / -V / --no-input</td><td>安静模式 / 版本号 / 非交互直接运行</td></tr>
       </table>
     </div>
   </section>

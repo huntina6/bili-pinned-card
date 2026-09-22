@@ -6,6 +6,11 @@
   "bin": {
     "bili-pinned-card": "cli.js"
   },
+  "files": [
+    "cli.js",
+    "lib/",
+    "types.d.ts"
+  ],
   "scripts": {
     "start": "node cli.js",
     "test": "node --test",
@@ -33,6 +38,7 @@
   },
   "homepage": "https://github.com/huntina6/bili-pinned-card",
   "license": "MIT",
+  "author": "huntina6",
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "qrcode": "^1.5.4"
