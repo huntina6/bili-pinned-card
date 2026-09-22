@@ -12,7 +12,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 // mock fetch 无真实网络，关闭请求层 1~2s 节流避免拖慢测试
 require('../lib/api/client').setThrottle(false);
-const { resolveCommentOid, extractReplyParams, getPinnedComment } = require('../lib/api');
+const { resolveCommentOid, extractReplyParams, getPinnedComment, getPinnedDynamic, getAllDynamics, getDynamicUpper } = require('../lib/api');
 const { isBareDynamicId } = require('../lib/api/util');
 const { BiliError } = require('../lib/api/client');
 
@@ -133,6 +133,7 @@ test('extractReplyParams：MAJOR_TYPE_NONE 回退 dynId/type=11', () => {
 const topReplyRes = () => jsonRes({
   code: 0, message: 'OK',
   data: {
+    upper: { mid: 401315430 },
     top_replies: [{ rpid: 313406396048, mid: 401315430, ctime: 1754985600, like: 9, rcount: 2, member: { uname: 'UP', avatar: '//i0.hdslb.com/a.jpg' }, content: { message: '置顶内容', emote: {}, pictures: [] } }],
     replies: [{ rpid: 313406396048 }],
   },
@@ -144,6 +145,13 @@ test('getPinnedComment：正常取到 → reason=ok', async t => {
   assert.strictEqual(reason, 'ok');
   assert.strictEqual(comment.rpid, '313406396048');
   assert.strictEqual(comment.author, 'UP');
+});
+
+test('getPinnedComment：withReason 附带 upperMid（游客模式 UP 徽标兜底数据）', async t => {
+  t.mock.method(globalThis, 'fetch', async () => topReplyRes());
+  const r = await getPinnedComment('404135596', 11, '', { withReason: true });
+  assert.strictEqual(r.upperMid, 401315430);
+  assert.strictEqual(r.comment.rpid, '313406396048');
 });
 
 test('getPinnedComment：接口正常但无置顶 → reason=none（可判定为已取消置顶）', async t => {
@@ -188,4 +196,93 @@ test('getPinnedComment：不带 withReason 时保持旧签名（直接返回 com
 test('getPinnedComment：不带 withReason 且 -404 → 仍返回 null（向后兼容）', async t => {
   t.mock.method(globalThis, 'fetch', async () => jsonRes({ code: -404, message: '啥都木有' }));
   assert.strictEqual(await getPinnedComment('404135596', 11, ''), null);
+});
+
+// ====== 8. opus 动态详情：basic.comment_id_str 为准（修复 oid 取成动态 ID） ======
+test('resolveCommentOid：opus 详情带 basic 时取 comment_id_str（真实结构回归）', async t => {
+  t.mock.method(globalThis, 'fetch', async () => jsonRes({
+    code: 0, message: 'OK',
+    data: {
+      item: {
+        id_str: '1232243387332034584',
+        basic: { comment_id_str: '404135596', comment_type: 11 },
+        modules: { module_dynamic: { major: { type: 'MAJOR_TYPE_OPUS', opus: { jump_url: '//www.bilibili.com/opus/1232243387332034584' } } } },
+      },
+    },
+  }));
+  const r = await resolveCommentOid('https://www.bilibili.com/opus/1232243387332034584');
+  assert.strictEqual(r.oid, '404135596', '必须是评论 oid 而非动态 ID');
+  assert.strictEqual(r.type, 11);
+});
+
+// ====== 9. getPinnedDynamic：置顶排最前时 latest 必须取非置顶条目 ======
+const feedItem = (idStr, commentId, tag, pubTs, desc) => ({
+  id_str: idStr,
+  basic: { comment_id_str: commentId, comment_type: 11 },
+  modules: {
+    module_tag: tag ? { text: tag } : undefined,
+    module_author: { name: 'UP', mid: 401315430, pub_ts: pubTs },
+    module_dynamic: desc ? { desc: { text: desc } } : {},
+  },
+});
+
+test('getPinnedDynamic：latest 用非置顶条目，authorMid 直接可用（修复取到置顶项）', async t => {
+  t.mock.method(globalThis, 'fetch', async () => jsonRes({
+    code: 0, message: 'OK',
+    data: { items: [feedItem('900', '111', '置顶', 100, '置顶正文'), feedItem('901', '222', null, 200, '最新正文')] },
+  }));
+  const d = await getPinnedDynamic('401315430', '');
+  assert.strictEqual(d.dynId, '900');
+  assert.strictEqual(d.oid, '111');
+  assert.strictEqual(d.pinned, true);
+  assert.strictEqual(d.latestId, '901', 'latest 不能是置顶条目');
+  assert.strictEqual(d.latestDesc, '最新正文');
+  assert.strictEqual(d.latestTs, 200);
+  assert.strictEqual(d.authorMid, 401315430);
+  assert.strictEqual(d.latestMid, 401315430);
+});
+
+test('getPinnedDynamic：无置顶条目时 items[0] 同时作为置顶回退与最新', async t => {
+  t.mock.method(globalThis, 'fetch', async () => jsonRes({
+    code: 0, message: 'OK',
+    data: { items: [feedItem('902', '333', null, 300, '唯一动态')] },
+  }));
+  const d = await getPinnedDynamic('401315430', '');
+  assert.strictEqual(d.pinned, false);
+  assert.strictEqual(d.dynId, '902');
+  assert.strictEqual(d.latestId, '902');
+});
+
+// ====== 10. getAllDynamics：basic oid + authorMid 透传 ======
+test('getAllDynamics：优先 basic.comment_id_str 并携带 authorMid', async t => {
+  t.mock.method(globalThis, 'fetch', async () => jsonRes({
+    code: 0, message: 'OK',
+    data: {
+      has_more: false,
+      items: [feedItem('910', '444', null, 400, '')],
+    },
+  }));
+  const { dyns, total } = await getAllDynamics('401315430', 'cookie', 10);
+  assert.strictEqual(total, 1);
+  assert.strictEqual(dyns[0].oid, '444');
+  assert.strictEqual(dyns[0].type, 11);
+  assert.strictEqual(dyns[0].authorMid, 401315430);
+  assert.strictEqual(dyns[0].ctime, 400);
+});
+
+// ====== 11. getDynamicUpper：按 oid 进程内缓存（减少重复请求） ======
+test('getDynamicUpper：同一 oid 第二次命中缓存不再请求', async t => {
+  const comment = require('../lib/api/comment');
+  comment._resetUpperCache();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    return jsonRes({ code: 0, message: 'OK', data: { upper: { mid: 401315430, name: 'UP' } } });
+  });
+  const a = await getDynamicUpper('404135596', 11, '');
+  const b = await getDynamicUpper('404135596', 11, '');
+  assert.deepStrictEqual(a, { mid: 401315430, name: 'UP' });
+  assert.deepStrictEqual(b, a);
+  assert.strictEqual(calls, 1, '缓存命中不应再次请求');
+  comment._resetUpperCache();
 });

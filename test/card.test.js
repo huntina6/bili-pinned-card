@@ -197,3 +197,35 @@ test('toFileTs Unix 秒 → yyyyMMddHHmmss', () => {
   assert.strictEqual(toFileTs(null), '');
   assert.strictEqual(toFileTs(undefined), '');
 });
+
+// ====== 高度预算：防超长卡片 OOM（MAX_CARD_H） ======
+test('buildUpTopSvg 高度预算：超长互动截断并给出提示', async () => {
+  const mk = i => ({
+    rpid: String(i), author: 'u' + i, mid: i, ctime: 1754985600, like: 1, message: 'x',
+    emote: {}, pictures: [], avatar: '',
+    _tokens: [{ type: 'text', text: '测试内容' }], _emoteImgs: {}, _picImgs: [],
+  });
+  const items = Array.from({ length: 200 }, (_, i) => ({ kind: 'reply', parent: null, upReply: mk(i) }));
+  const svg = await card.buildUpTopSvg(mk('top'), items, [], { topN: 10 });
+  assert.ok(svg.includes('卡片高度上限'), '应出现截断提示');
+  const rendered = (svg.match(/>UP回复<\/text>/g) || []).length; // 每块的角标
+  assert.ok(rendered < 200, `截断后不应渲染全部 200 块，实际 ${rendered}`);
+  assert.ok(rendered > 0, '至少渲染一块');
+});
+
+// ====== 自定义分辨率（--scale / --width） ======
+test('renderPng：自定义倍率输出对应像素宽度', () => {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="680" height="100"><rect width="680" height="100" fill="#2b2140"/></svg>';
+  assert.strictEqual(parsePng(card.renderPng(svg, 0.5)).width, 340);
+  assert.strictEqual(parsePng(card.renderPng(svg, 1.5)).width, 1020);
+  assert.strictEqual(parsePng(card.renderPng(svg, 2.5)).width, 1700);
+  assert.strictEqual(parsePng(card.renderPng(svg, 6)).width, 4080);
+});
+
+test('maxCardHForScale：高度预算随倍率收紧（防高分辨率 OOM）', () => {
+  assert.strictEqual(card.maxCardHForScale(2), 12000);
+  assert.strictEqual(card.maxCardHForScale(1), 40000);
+  assert.strictEqual(card.maxCardHForScale(4), 3000);
+  assert.strictEqual(card.maxCardHForScale(6), 1333);
+  assert.strictEqual(card.maxCardHForScale(undefined), 12000);
+});

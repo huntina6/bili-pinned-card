@@ -2,6 +2,55 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.0] - 2026-09-18
+
+### 修复
+- **opus 动态评论 oid 取错（P0）**：动态条目自带权威字段 `basic.comment_id_str/comment_type`，而 `extractReplyParams` 仅按 `major.type` 推断——`MAJOR_TYPE_OPUS` 未覆盖时回退为动态 ID（实测 `id_str=1232243387332034584` vs `comment_id_str=404135596`），导致 opus 动态拉空评论区/取不到置顶卡。现优先取 `basic`，`major` 推断降为回退。
+- **最新动态误取置顶项（P0）**：`getPinnedDynamic` 用 `items[0]` 作为「最新动态」，但置顶条目固定排在首位——`--track-dyn` 普通动态更新监测因此不会触发（`latestId` 恒等于置顶 ID）。现改为取第一条未标记「置顶」的条目。
+- **opus 动态更新卡片无内容**：`extractDynamicContent` 补充 `MAJOR_TYPE_OPUS`（summary 正文 + pics 图片）。
+- `getAllSubReplies` 页数上限统一为 `MAX_SUB_PAGES=10`（互动回顾图/取消置顶此前写死 5 页 ≈ 100 条，与 up-top 的 10 页不一致，可能漏 UP 互动）。
+- **交互选择器 Ctrl+C 卡死（P0）**：raw 模式下 readline 无 `SIGINT` 监听时会自行 `close()`（Node 源码 `readline/interface.js`），而选择器仍等待按键 → 向导挂起、终端停留 raw。现统一支持 Ctrl+C / Ctrl+D / Esc 取消并优雅退出（先恢复光标与 raw、再退出，退出码 130）；键解析兼容 CSI（`\x1b[A`）/SS3（`\x1bOA`）方向键与分块 ESC 序列（单独 Esc 50ms 判定，参考 clack `escapeCodeTimeout`）。
+- **超长卡片内存/耗时风险（实测压测）**：新增卡片逻辑高度预算 `MAX_CARD_H=12000`——UP 热评/互动回顾/精彩回复/动态正文超限即截断并显示「…还有 N 条未展示」。实测 60 块（12,750 逻辑高）2x 渲染 2.7s、RSS +261MB；按原 `MAX_ITEMS_SAFE=200` 外推约 85,000px 高、RSS ≈0.9GB。
+- **默认输出目录跟随项目**：`--out` 未指定时，默认从「当前工作目录/output」改为「项目目录（cli.js 所在目录）/output」，切换运行目录/移动项目后不再写错位置；向导仅在用户自定义时持久化 `outDir`（新增 `outDirCustom` 标记），旧配置中遗留的 `<任意目录>/output` 默认值自动迁移，显式 `--out` 始终最高优先。
+
+### 新增
+- **bili_ticket 风控票据（best-effort）**：请求遇 `-352` 且非 `v_voucher` 验证码风控时，自动向 `GenWebTicket`（POST + HMAC-SHA256 签名）申请约 3 天有效票据并附加 Cookie 重试 1 次；内存+文件（`~/.bili-pinned-card/ticket.json`）缓存。新增 `lib/api/ticket.js`。
+- **网络瞬时故障自动重试**：`httpJson` 对 fetch 超时/连接重置重试 1 次（1s 间隔）。
+- **UP 热评卡断点续传**：`--up-top` 出卡前检查同名文件（`up-top_<时间>_<rpid>.png`），已存在则跳过（`--force` 可重出）；全账号长跑中断后重跑不再重复拉子回复/重复出图。
+- **`-V, --version`**：显示版本号；版本号改为读取 `package.json`（单一来源）。
+- **v_voucher 诊断**：识别验证码风控（`-352` + `data.v_voucher`），日志/错误提示明确区分「限流」与「需验证码冷却」。
+- **图床缩略图**：新增 `imgVariant()` 按显示尺寸请求 B站 CDN 变体（实测头像 65KB→`@80w_80h_1c.jpg` 1.8KB，配图 `@640w.jpg`），显著降低下载量、内存与 SVG base64 体积；已带 `@` 参数的 URL 仅做 webp→jpg 替换。
+- **Unicode emoji 彩色化**：新增 `lib/card/emoji.js`——grapheme 切分 → Twemoji 内联 PNG（复用表情 token 管线）；CDN 失败一次即进程级熔断回退文本；`--no-emoji` 关闭、`BILI_EMOJI_CDN` 可换源。
+- **自定义分辨率**：新增 `--width <像素>`（340~4080，优先于 `--scale`）与 `--scale <倍率>`（0.5~6，支持 `1.5` 等小数）；交互向导「卡片与输出」新增分辨率选择（1x/2x/3x/自定义宽度），汇总显示输出像素；高度预算随倍率自动收紧（`maxCardHForScale`，像素预算与 2x/12000 逻辑高相当），高分辨率不再有内存暴涨风险。
+
+### 优化
+- **少一次请求**：UP 热评卡从空间动态作者 `mid`、评论响应 `upper.mid` 复用 UP 身份，仅在都缺失时才单独请求识别；`feed/space` 补 `features`/`web_location` 标准参数。
+- **交互输入校验与易用性**：UID 必须纯数字、间隔 ≥10、TOP N 1-50，非法输入就地报错并重问（原先 UID 完全未校验、其余静默取默认）；输出目录支持 `~` 展开；选择器支持数字键直达并显示编号（`1)`/`2)`…）；选择期间隐藏光标；新增 `--no-input`（TTY 下显式禁用向导，符合 clig.dev 建议）。
+- **交互模式登录状态前置 + 功能门控**：向导第一步改为「登录状态」选择（已登录/重新扫码/游客），并据此展示能力边界与门控流程——游客跳过 UID、强制填写动态链接，不可用 UID 自动识别 / 全账号热评 / 完整子回复（仅第一页 20 条）；扫码失败自动降级为游客并提示。`getPinnedComment` 同响应返回 `upperMid`，游客模式下置顶卡片的「UP主」徽标仍正确。
+- **风控自适应退避**：watch 模式连续失败按 `interval × 2^(n-1)` 退避（上限 10 分钟、±20% 抖动），风控/签名/登录态/网络错误均适用，成功后自动复位并提示；对应录播机社区 412 处置实践（调大间隔、增加等待、避免规律性）。
+- **浏览器风格请求头**：`httpJson` 补 `Accept-Language` 与 `Sec-Fetch-*`，`api.bilibili.com` 请求附 `Origin: https://www.bilibili.com`，进一步降低脚本特征。
+- **进程内缓存**：`getDynamicUpper` 按 oid 缓存（上限 100），减少游客/指定动态场景的重复请求。
+- **交互向导与命令模式全量对齐**：补齐 `--force`（强制重出图）、`--max-dyns`（全账号检索限额）、`--no-emoji`（彩色 emoji 开关）、手动粘贴 Cookie（无扫码环境备用），并新增「指定评论出图」模式（`--rpid`，可选 `--context` UP 互动回顾），向导现已覆盖除 `--no-input`/`--yes`/`-q`/`-v`（交互场景无意义）外的全部可用参数。
+- **交互体验升级（借鉴 clack/ora/inquirer 的零依赖实现）**：① 网络等待加 `startSpinner` 加载动画（动态链接解析等）；② Cookie 输入改为掩码（`askSecret`，不回显原文、支持退格，Esc/Ctrl+C 取消）；③ UP 热评批量出图加 `[i/N]` 进度前缀；④ 单次/热评/指定评论完成后可「返回配置菜单再运行」（REPL 循环，watch 模式不受影响）。
+- `classifyError` 改用 `RISK_CODES` 常量（消除重复码值清单）。
+- `--max-dyns` 非法值（非数字/0/负数）回退默认不限制。
+- **出图性能**：表情/互动链图片下载并发化（`prepareNode` 节点去重，配图与尺寸解析共用一次变体计算）；`downloadImage` 网络/非 2xx 重试 1 次；`fitSinglePic` 不再放大原图（小图保持原始宽度）。
+
+### 测试
+- 新增 `test/ticket.test.js`（7 用例：签名固定向量、内存/文件缓存、失败抛错、`-352` 重试链路、v_voucher 不重试、网络重试）
+- 新增 `test/ui.test.js`（15 用例：方向键/SS3/数字快捷键、Esc 50ms 判定、Ctrl+C/Ctrl+D 与 SIGINT 取消哨兵、校验重问、`~` 展开、登录/游客能力矩阵）
+- 新增 `test/emoji.test.js`（8 用例：grapheme/文件名映射/熔断/分词与回退渲染）
+- `test/api.test.js` 扩充 `imgVariant` 缩略图、`extractReplyParams`（basic 优先/回退/非法 type）与 OPUS 动态内容
+- `test/image.test.js` 扩充 `fitSinglePic` 不放大与下载重试次数守护
+- `test/cli.test.js` 扩充 `--version`/`--max-dyns`/`--scale`（小数）/`--width`/`--no-emoji`/输出目录迁移守护
+- `test/card.test.js` 扩充高度预算截断、自定义倍率输出像素、`maxCardHForScale` 换算守护
+- `test/ui.test.js` 扩充输出宽度校验
+- `test/ui.test.js` 扩充掩码输入（`askSecret` 掩码/退格/取消）与 `startSpinner` 守护
+- `test/watcher.test.js` 扩充 `computeBackoffMs`（指数/封顶/抖动边界）
+- `test/throttle.test.js` 扩充浏览器风格请求头守护（api 域带 Origin、passport 不带）
+- `test/resolve-oid.test.js` 扩充 opus `basic` 解析、`getPinnedDynamic` latest 修复、`getAllDynamics` authorMid、`getPinnedComment.upperMid`、`getDynamicUpper` 进程内缓存
+- 测试用例总数 **124 → 189**；`npm run check` 清单补入 `lib/api/ticket.js`、`lib/card/emoji.js`、`test/ticket.test.js`、`test/ui.test.js`、`test/emoji.test.js`
+
 ## [1.4.1] - 2026-09-10
 
 ### 修复

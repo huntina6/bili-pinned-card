@@ -20,6 +20,7 @@ interface CliConfig {
   context: boolean;
   upTop: number;
   maxDyns: number;
+  scale: number;
   yes: boolean;
   trackDyn: boolean;
   quiet: boolean;

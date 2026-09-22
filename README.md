@@ -39,7 +39,7 @@ node cli.js --login
 node cli.js
 ```
 
-按终端提示逐步配置：模式（持续监控/单次检查/UP 热评 TOP 卡）→ UID → 登录方式（沿用已保存/扫码/匿名）→ 动态目标 → 间隔 → 卡片选项 → 输出目录。配置会保存到 `~/.bili-pinned-card/config.json`，下次运行直接回车使用默认值。
+按终端提示**先选择登录状态**（已登录/扫码/手动粘贴 Cookie/游客），再逐步配置：模式（持续监控/单次检查/UP 热评 TOP 卡/指定评论出图）→ UID（游客跳过）→ 动态目标 → 评论与互动回顾（指定评论出图时）→ 全账号检索限额（热评留空时）→ 间隔、强制重出图、彩色 emoji → **输出分辨率（1x/2x/3x/自定义宽度 340~4080px）** → 输出目录。游客模式下不可用：UID 自动识别置顶动态、全账号热评检索、完整子回复（仅第一页 20 条），因此**必须填写动态链接或 ID**；登录后以上功能全部解锁。配置会保存到 `~/.bili-pinned-card/config.json`，下次运行直接回车使用默认值；向导支持数字键直选，UID/间隔/TOP N/宽度/Cookie/评论 ID 会校验后重问，`~` 自动展开为用户目录；网络等待有加载动画（spinner），手动 Cookie 输入以 `*` 掩码不回显；单次检查/热评/指定评论完成后可选择「返回配置菜单，再运行一次」；Esc 或 Ctrl+C 可随时取消（退出码 130，不会误运行）。
 
 ### 运行日志（排障）
 
@@ -111,14 +111,19 @@ node cli.js --uid 401315430 --cookie "SESSDATA=xxx" --watch -i 300 -q
 --max-dyns <N>         --uid + --up-top 时最多处理的动态条数（默认不限制）
 --yes                  非交互模式下跳过全账号检索的确认询问
 --cookie <SESSDATA>    登录 Cookie（可选）：解锁自动识别/完整子回复，降低风控
+--no-input             非交互：不进入配置向导，直接用参数/已保存配置运行
 --watch                持续监控（默认）
 --once                 单次检查
 --force                强制重新出图（忽略 state.json）
 --track-dyn            同时监测普通动态更新
 -r, --show-replies     卡片上绘制精彩回复
 -i, --interval <秒>    监控间隔（默认 60，最短 10）
--o, --out <目录>       输出目录（默认 ./output）
+-o, --out <目录>       输出目录（默认：项目目录（cli.js 同级）下的 output/）
+--scale <倍率>         渲染倍率（默认 2；0.5~6，支持 1.5 等小数）
+--width <像素>         自定义输出宽度（340~4080，优先于 --scale）
+--no-emoji             关闭 Unicode emoji 彩色化（默认用 Twemoji 内联图）
 -q, --quiet            安静模式
+-V, --version          显示版本号
 -h, --help             帮助
 ```
 
@@ -168,7 +173,7 @@ node cli.js --uid 401315430 --cookie "SESSDATA=xxx" --watch -i 300 -q
 - 互动回顾图：主评论 + 「UP互动回顾」对话链（被UP回复 / UP回复 / 被UP点赞 三种角色块）
 - 页脚：左侧 `BILI PINNED COMMENT` 等标识，右侧显示**动态完整链接** `https://t.bilibili.com/<oid>`
 
-字体用系统字体：macOS PingFang SC / Windows 微软雅黑 / Linux Noto Sans CJK，无需配置。正文含 emoji 时可能显示为空白（渲染器不支持彩色 emoji 字体），B站表情（`[xxx]` 占位符）已支持内联图片。
+字体用系统字体：macOS PingFang SC / Windows 微软雅黑 / Linux Noto Sans CJK，无需配置。Unicode emoji 默认转为 Twemoji 内联彩图（resvg 不支持彩色字体；CDN 不可达时自动熔断回退为文字，`--no-emoji` 可关闭，`BILI_EMOJI_CDN` 可换源），B站表情（`[xxx]` 占位符）内联图片。头像/配图自动按显示尺寸请求 B站 CDN 缩略图（头像 65KB→约 2KB），超长卡片按 12,000 逻辑高度预算截断并在卡内提示。
 
 ## 输出文件
 
@@ -181,17 +186,18 @@ node cli.js --uid 401315430 --cookie "SESSDATA=xxx" --watch -i 300 -q
 
 ## 常见问题
 
-- **`-352` 风控**：匿名自动识别置顶动态被拦截 → 提供 `--cookie` 或改用 `--oid` 直连。
+- **`-352` 风控**：匿名自动识别置顶动态被拦截 → 提供 `--cookie` 或改用 `--oid` 直连。watch 模式下程序会**自动指数退避**（最长 10 分钟、带抖动），恢复后自动复位，无需手动干预。
 - **互动图显示「暂无 UP 互动」**：该评论的子回复中没有 UP 回复/点赞的记录，属正常情况；若怀疑是匿名限制（只拉了前 20 条），请配置 Cookie 后重试。
 - **`--up-top` 全账号模式提示需 Cookie / 要求确认**：匿名会被风控（-352），且子回复只取第一页；提供 `--cookie` 后先列出账号动态总数询问确认（防误触），非交互环境（cron）需加 `--yes` 自动确认，`--max-dyns` 可限制处理条数。
-- **图片空白/占位**：个别 CDN 图下载失败时自动降级为占位块，不影响文字。
+- **图片空白/占位**：个别 CDN 图下载失败时自动降级为占位块（内置重试 1 次），不影响文字。
+- **emoji 显示为黑白或空白**：Unicode emoji 默认转 Twemoji 内联彩图；CDN 不可达时进程级熔断回退为文字（不阻塞出图），可用 `BILI_EMOJI_CDN` 换源或 `--no-emoji` 关闭。
 - **`--interval` 最小 10 秒**：过频会被风控，建议 ≥ 30。
 - **Node < 18**：`fetch`/`AbortSignal.timeout` 不可用，请升级。
 
 ## 开发与验证
 
 ```bash
-npm test          # 99 个单元测试（node:test 零依赖，无网络）
+npm test          # 189 个单元测试（node:test 零依赖，无网络）
 npm run check     # 全部 JS/脚本语法检查（跨平台）
 npm run typecheck # JSDoc 类型检查（tsc --noEmit，零错误）
 npm run smoke     # 冒烟测试：真实网络「拉评论 → 渲染 → 出 PNG」全链路（约 3s）
@@ -219,10 +225,10 @@ bili-pinned-card/
 │   ├── logger.js           # 文件日志（按天滚动 + 敏感脱敏）
 │   ├── state.js            # 配置/状态持久化（原子写）
 │   ├── ui.js / card.js / png.js
-│   ├── api/                # client（节流/风控）/ wbi（签名缓存）/ comment / dynamic / image / util
-│   └── card/               # constants / text / image / layout / templates
+│   ├── api/                # client（节流/风控/重试）/ wbi（签名缓存）/ ticket（风控票据）/ comment / dynamic / image / util
+│   └── card/               # constants / text / emoji / image / layout / templates
 ├── scripts/                # smoke / verify-pixels / export-svg / collect-comment-styles
-├── test/                   # 6 个测试文件（99 用例，node:test）
+├── test/                   # 14 个测试文件（189 用例，node:test）
 ├── types.d.ts              # JSDoc 全局类型（CliConfig）
 └── output/                 # 出图目录（运行时生成）
 ```

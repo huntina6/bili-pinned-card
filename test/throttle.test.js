@@ -4,7 +4,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const { pickProfile, computeDelay, setRng, setThrottle, _throttleDelay } = require('../lib/api/client');
+const { pickProfile, computeDelay, setRng, setThrottle, _throttleDelay, httpJson } = require('../lib/api/client');
 
 test.afterEach(() => {
   setRng(null);
@@ -57,4 +57,23 @@ test('setThrottle(true) + 固定 RNG：_throttleDelay 按下界等待', async ()
   await _throttleDelay('https://api.bilibili.com/x/v2/reply?type=11');
   const elapsed = Date.now() - t0;
   assert.ok(elapsed >= 950, `应等待约 1000ms，实际 ${elapsed}ms`);
+});
+
+// ====== 浏览器风格请求头（降低脚本特征） ======
+test('httpJson 请求头：api.bilibili.com 带 Origin，passport 不带', async t => {
+  setThrottle(false);
+  const captured = [];
+  t.mock.method(globalThis, 'fetch', async (url, opts) => {
+    captured.push({ url: String(url), headers: opts.headers });
+    return { ok: true, status: 200, text: async () => JSON.stringify({ code: 0, message: '0' }) };
+  });
+  await httpJson('https://api.bilibili.com/x/test', { cookie: 'a=b' });
+  await httpJson('https://passport.bilibili.com/x/test');
+  const api = captured[0].headers, passport = captured[1].headers;
+  assert.strictEqual(api['Origin'], 'https://www.bilibili.com');
+  assert.ok(String(api['Accept-Language']).includes('zh-CN'));
+  assert.strictEqual(api['Sec-Fetch-Site'], 'same-site');
+  assert.strictEqual(api['Sec-Fetch-Mode'], 'cors');
+  assert.ok(String(api['User-Agent']).includes('Mozilla'));
+  assert.strictEqual(passport['Origin'], undefined, '非 api 域名不带 Origin');
 });

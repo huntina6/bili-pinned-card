@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const api = require('../lib/api');
-const { extractId, isOpusLink, isDynamicLink, filterUpInteractions, extractDynamicContent, filterUpComments, buildUpContextItems, pickTopFanReplies, fixWebpUrl } = api;
+const { extractId, isOpusLink, isDynamicLink, filterUpInteractions, extractDynamicContent, filterUpComments, buildUpContextItems, pickTopFanReplies, fixWebpUrl, extractReplyParams, imgVariant } = api;
 
 
 // ====== extractId（回归：评论分享链接必须提取 rpid 而非 oid） ======
@@ -348,5 +348,84 @@ test('fixWebpUrl 空/null/undefined 原样返回', () => {
   assert.strictEqual(fixWebpUrl(''), '');
   assert.strictEqual(fixWebpUrl(null), '');
   assert.strictEqual(fixWebpUrl(undefined), '');
+});
+
+// ====== imgVariant：B站图床缩略图参数（降体积/内存） ======
+test('imgVariant：头像裁切方形 + 配图限宽', () => {
+  const base = 'https://i0.hdslb.com/bfs/face/abc.jpg';
+  assert.strictEqual(imgVariant(base, { w: 80, h: 80, crop: true }), base + '@80w_80h_1c.jpg');
+  assert.strictEqual(imgVariant(base, { w: 640 }), base + '@640w.jpg');
+  assert.strictEqual(imgVariant(base, { w: 640, quality: 75 }), base + '@640w_75q.jpg');
+});
+
+test('imgVariant：query 保留在参数之后', () => {
+  const base = 'https://i0.hdslb.com/bfs/archive/a.jpg';
+  assert.strictEqual(imgVariant(base + '?x=1', { w: 400 }), base + '@400w.jpg?x=1');
+});
+
+test('imgVariant：已带 @ 参数仅替换 webp 格式，不叠加尺寸', () => {
+  const base = 'https://i1.hdslb.com/bfs/archive/a.jpg';
+  assert.strictEqual(imgVariant(base + '@100w.webp', { w: 640 }), base + '@100w.jpg');
+  assert.strictEqual(imgVariant(base + '@100w.jpg', { w: 640 }), base + '@100w.jpg');
+});
+
+test('imgVariant：非 B站域名/空值原样返回', () => {
+  assert.strictEqual(imgVariant('https://example.com/a.jpg', { w: 80 }), 'https://example.com/a.jpg');
+  assert.strictEqual(imgVariant('', { w: 80 }), '');
+  assert.strictEqual(imgVariant(null, { w: 80 }), '');
+});
+
+// ====== extractReplyParams：basic.comment_id_str 优先（修复 opus 动态 oid 取成动态 ID） ======
+test('extractReplyParams 优先 basic.comment_id_str（opus：id_str ≠ 评论 oid）', () => {
+  const item = {
+    id_str: '1232243387332034584',
+    basic: { comment_id_str: '407750907', comment_type: 11 },
+    modules: { module_dynamic: { major: { type: 'MAJOR_TYPE_OPUS', opus: { jump_url: '//www.bilibili.com/opus/1232243387332034584' } } } },
+  };
+  assert.deepStrictEqual(extractReplyParams(item), { oid: '407750907', type: 11 });
+});
+
+test('extractReplyParams basic.comment_type 非 11 时透传（视频动态 type=1）', () => {
+  const item = { id_str: 'xxx', basic: { comment_id_str: '117285792516920', comment_type: 1 }, modules: {} };
+  assert.deepStrictEqual(extractReplyParams(item), { oid: '117285792516920', type: 1 });
+});
+
+test('extractReplyParams basic.comment_type 非法时回退 type=11', () => {
+  assert.deepStrictEqual(
+    extractReplyParams({ id_str: 'x', basic: { comment_id_str: '123', comment_type: 0 }, modules: {} }),
+    { oid: '123', type: 11 });
+  assert.deepStrictEqual(
+    extractReplyParams({ id_str: 'x', basic: { comment_id_str: '123', comment_type: 'bad' }, modules: {} }),
+    { oid: '123', type: 11 });
+});
+
+test('extractReplyParams 无 basic 时回退 major 推断（向后兼容）', () => {
+  const archive = { id_str: '1', modules: { module_dynamic: { major: { type: 'MAJOR_TYPE_ARCHIVE', archive: { aid: 999 } } } } };
+  assert.deepStrictEqual(extractReplyParams(archive), { oid: '999', type: 1 });
+  const draw = { id_str: '1232243387332034584', modules: { module_dynamic: { major: { type: 'MAJOR_TYPE_DRAW', draw: { id: 404135596 } } } } };
+  assert.deepStrictEqual(extractReplyParams(draw), { oid: '404135596', type: 11 });
+  const none = { id_str: '123', modules: { module_dynamic: {} } };
+  assert.deepStrictEqual(extractReplyParams(none), { oid: '123', type: 11 });
+});
+
+test('extractDynamicContent OPUS 图文动态（summary + pics）', () => {
+  const item = {
+    modules: {
+      module_dynamic: {
+        desc: null,
+        major: {
+          type: 'MAJOR_TYPE_OPUS',
+          opus: {
+            title: '标题',
+            summary: { text: '正文内容' },
+            pics: [{ url: '//i0.hdslb.com/1.png' }, { url: 'http://i0.hdslb.com/2.png' }],
+          },
+        },
+      },
+    },
+  };
+  const r = extractDynamicContent(item);
+  assert.strictEqual(r.desc, '正文内容');
+  assert.deepStrictEqual(r.images, ['https://i0.hdslb.com/1.png', 'https://i0.hdslb.com/2.png']);
 });
 

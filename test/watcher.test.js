@@ -5,7 +5,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const { classifyError } = require('../lib/watcher');
+const { classifyError, computeBackoffMs, MAX_BACKOFF_MS } = require('../lib/watcher');
 const { BiliError, RISK_CODES } = require('../lib/api');
 
 test('classifyError：Cookie 失效 (-101) → auth', () => {
@@ -45,4 +45,21 @@ test('classifyError：非 BiliError 错误 → other', () => {
   assert.strictEqual(classifyError(new Error('网络超时')), 'other');
   assert.strictEqual(classifyError('字符串错误'), 'other');
   assert.strictEqual(classifyError(null), 'other');
+});
+
+// ====== 风控自适应退避（computeBackoffMs） ======
+test('computeBackoffMs：指数退避 1x/2x/4x/8x（rng=0.5 无抖动）', () => {
+  const r = () => 0.5;
+  assert.strictEqual(computeBackoffMs(60, 1, r), 60000);
+  assert.strictEqual(computeBackoffMs(60, 2, r), 120000);
+  assert.strictEqual(computeBackoffMs(60, 3, r), 240000);
+  assert.strictEqual(computeBackoffMs(60, 4, r), 480000);
+  assert.strictEqual(computeBackoffMs(60, 9, r), 480000, '指数封顶 8x');
+});
+
+test('computeBackoffMs：10 分钟上限 + ±20% 抖动边界', () => {
+  assert.strictEqual(computeBackoffMs(300, 2, () => 0.5), MAX_BACKOFF_MS, '300s×2=600s 恰好封顶');
+  assert.strictEqual(computeBackoffMs(300, 5, () => 0.5), MAX_BACKOFF_MS);
+  assert.strictEqual(computeBackoffMs(60, 1, () => 0), 48000);
+  assert.strictEqual(computeBackoffMs(60, 1, () => 1), 72000);
 });
