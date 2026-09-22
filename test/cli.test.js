@@ -91,8 +91,8 @@ test('默认输出目录 = 项目目录/output（常量与 buildConfig 一致）
 
 test('旧配置遗留的 <任意目录>/output 默认值自动迁移到项目目录', () => {
   // 历史版本保存的是 cwd/output 绝对路径（未标记自定义）
-  assert.strictEqual(buildConfig(parseArgs([]), { outDir: 'C:/Users/someone/bili-pinned-card/output' }).outDir, PROJECT_OUT);
-  assert.strictEqual(buildConfig(parseArgs([]), { outDir: '/home/someone/app/output' }).outDir, PROJECT_OUT);
+  assert.strictEqual(buildConfig(parseArgs([]), { outDir: 'C:/projects/legacy-app/output' }).outDir, PROJECT_OUT);
+  assert.strictEqual(buildConfig(parseArgs([]), { outDir: '/opt/legacy-app/output' }).outDir, PROJECT_OUT);
 });
 
 test('自定义输出目录保留；显式 --out 最高优先', () => {
