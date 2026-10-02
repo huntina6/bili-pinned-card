@@ -318,7 +318,9 @@ function wizardTrace(spec, home) {
   `;
   const out = execFileSync(process.execPath, ['-e', script], {
     encoding: 'utf8',
-    env: { ...process.env, HOME: home, WIZ_SPEC: JSON.stringify(spec) },
+    // HOME 供 POSIX；USERPROFILE 供 Windows（os.homedir() 在 Windows 读 USERPROFILE），
+    // 否则子进程的 persistDraft 会写到 CI runner 的真实用户目录
+    env: { ...process.env, HOME: home, USERPROFILE: home, WIZ_SPEC: JSON.stringify(spec) },
   });
   const line = out.split('\n').find(l => l.startsWith('__RESULT__'));
   assert.ok(line, '子进程未返回结果：' + out);
