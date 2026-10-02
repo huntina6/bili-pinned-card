@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bili-pinned-card v1.6.0 —— B站置顶评论监测 + 自动出图
+ * bili-pinned-card v1.7.0 —— B站置顶评论监测 + 自动出图
  * 全平台独立版：无需浏览器、无需登录（匿名可读评论；提供 SESSDATA 可自动识别置顶动态）
  *
  * 用法（中文名 / 英文名 / 旧参数名三种写法完全等价，完整说明见 node cli.js --帮助）：
