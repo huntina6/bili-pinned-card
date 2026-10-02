@@ -64,15 +64,18 @@ jobs:
           prerelease: false
           update: true
 
+      # 注意：secrets 上下文不允许出现在 if 条件里（steps[*].if 的可用上下文为
+      # github/needs/strategy/matrix/job/runner/env/vars/steps/inputs，不含 secrets）。
+      # 一旦写成 if: ${{ secrets.X != '' }}，GitHub 会把整个工作流文件判为无效：
+      # 运行秒失败、不产生任何 job、工作流名退化为文件路径（本仓库自 v1.5.0 tag 起即如此）。
+      # 因此合并为一个步骤，在 run 里做运行时判断；secret 仍只在该步骤的 env 中可见。
       - name: Publish to GitHub Packages (npm)
-        if: ${{ secrets.PACKAGES_TOKEN != '' }}
         continue-on-error: true # token 过期/权限不足时不阻塞 Release（发不出时会在日志给出 npm error）
-        run: |
-          npm publish --registry=https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
-
-      - name: Skip publish (no PACKAGES_TOKEN)
-        if: ${{ secrets.PACKAGES_TOKEN == '' }}
         run: |
-          echo "未配置 PACKAGES_TOKEN（个人命名空间的 npm 包需用户级 PAT，GITHUB_TOKEN 无法写入）→ 跳过包发布，Release 正常完成"
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "未配置 PACKAGES_TOKEN（个人命名空间的 npm 包需用户级 PAT，GITHUB_TOKEN 无法写入）→ 跳过包发布，Release 正常完成"
+            exit 0
+          fi
+          npm publish --registry=https://npm.pkg.github.com
