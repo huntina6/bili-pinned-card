@@ -70,13 +70,17 @@ jobs:
       # 一旦写成 if: ${{ secrets.X != '' }}，GitHub 会把整个工作流文件判为无效：
       # 运行秒失败、不产生任何 job、工作流名退化为文件路径（本仓库自 v1.5.0 tag 起即如此）。
       # 因此合并为一个步骤，在 run 里做运行时判断；secret 仍只在该步骤的 env 中可见。
+      # 另外不用 continue-on-error 掩码失败：显式捕获并输出 ::warning 注解（在运行 Summary 上可见），
+      # 既保持「包发布失败不阻塞 Release」的既定策略，又不把失败伪装成成功
+      # （v1.7.0 首次发布时 PACKAGES_TOKEN 就是 E401 失败被掩码，只能翻日志才发现）。
       - name: Publish to GitHub Packages (npm)
-        continue-on-error: true # token 过期/权限不足时不阻塞 Release（发不出时会在日志给出 npm error）
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "未配置 PACKAGES_TOKEN（个人命名空间的 npm 包需用户级 PAT，GITHUB_TOKEN 无法写入）→ 跳过包发布，Release 正常完成"
+            echo "::warning title=未配置 PACKAGES_TOKEN::个人命名空间的 npm 包需用户级 PAT（GITHUB_TOKEN 无法写入）→ 跳过包发布，Release 不受影响"
             exit 0
           fi
-          npm publish --registry=https://npm.pkg.github.com
+          if ! npm publish --registry=https://npm.pkg.github.com; then
+            echo "::warning title=包发布失败::PACKAGES_TOKEN 无效或缺少 write:packages 权限 → 已跳过包发布（Release 不受影响，原因见上方 npm error）"
+          fi
