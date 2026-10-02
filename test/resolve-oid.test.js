@@ -10,8 +10,15 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 // mock fetch 无真实网络，关闭请求层 1~2s 节流避免拖慢测试
-require('../lib/api/client').setThrottle(false);
+const client = require('../lib/api/client');
+client.setThrottle(false);
+// buvid 现已落盘复用：重定向到临时目录，避免污染真实 ~/.bili-pinned-card/buvid.json
+const buvidDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bili-buvid-'));
+client.setBuvidDir(buvidDir);
 const { resolveCommentOid, extractReplyParams, getPinnedComment, getPinnedDynamic, getAllDynamics, getDynamicUpper } = require('../lib/api');
 const { isBareDynamicId } = require('../lib/api/util');
 const { BiliError } = require('../lib/api/client');
@@ -29,6 +36,7 @@ async function primeAnonCookie() {
 }
 // ====== 全局预热：确保 buvid 已缓存，业务请求不再走 SPI ======
 test.before(async () => { await primeAnonCookie(); });
+test.after(() => { try { fs.rmSync(buvidDir, { recursive: true, force: true }); } catch { /* 忽略 */ } });
 
 /** 构造一个「图文动态」详情响应：dynId ≠ oid（这是 Bug 的核心场景） */
 const drawDetail = () => ({
@@ -270,7 +278,53 @@ test('getAllDynamics：优先 basic.comment_id_str 并携带 authorMid', async t
   assert.strictEqual(dyns[0].ctime, 400);
 });
 
-// ====== 11. getDynamicUpper：按 oid 进程内缓存（减少重复请求） ======
+// ====== 11. 全 0 壳：把「评论分享链接」当动态链接粘贴（实测复现） ======
+// B站 详情接口对「非动态 ID」不报错，而是回 code=0 + 全 0 壳（id_str/comment_id_str 均为 "0"）；
+// 分享链接 t.bilibili.com/407750907?comment_root_id=... 里的 407750907 是该动态的「评论 oid」而非动态 ID。
+const shellItem = {
+  id_str: '0',
+  id: 0,
+  basic: { rid_str: '0', comment_id_str: '0', comment_type: 17 },
+  modules: { module_dynamic: { major: { type: 'MAJOR_TYPE_NONE' } } },
+};
+const shellDetail = () => jsonRes({ code: 0, message: '0', data: { item: shellItem } });
+const COMMENT_SHARE_LINK = 'https://t.bilibili.com/407750907?comment_on=1&comment_root_id=318265436368&share_tag=s_i&type=2#reply318265436368';
+
+test('extractReplyParams：全 0 壳不得产出 oid="0"（字符串 "0" 是 truthy，曾被当合法 oid 一路带下去）', () => {
+  const r = extractReplyParams(shellItem);
+  assert.strictEqual(r.oid, '', '无效 ID 必须显式返回空，交由调用方判定');
+});
+
+test('resolveCommentOid：评论分享链接（detail 回全 0 壳）→ 探测后按评论 oid/type=11 使用', async t => {
+  const urls = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(String(url));
+    if (String(url).includes('/web-dynamic/v1/detail')) return shellDetail();
+    return jsonRes({ code: 0, message: 'OK', data: { upper: { mid: 401315430 }, top_replies: [{ rpid: 318476408976 }], page: { count: 91 } } });
+  });
+  const r = await resolveCommentOid(COMMENT_SHARE_LINK);
+  assert.deepStrictEqual(r, { oid: '407750907', type: 11 }, '修复前为 { oid: "0", type: 17 }，下游报 -400 / 12089');
+  assert.ok(urls.some(u => u.includes('/x/v2/reply?')), '应探测该 ID 是否为可用评论区对象');
+});
+
+test('resolveCommentOid：全 0 壳 + 评论区探测失败 → 抛可操作错误（不再静默 oid=0）', async t => {
+  t.mock.method(globalThis, 'fetch', async url => (String(url).includes('/web-dynamic/v1/detail')
+    ? shellDetail()
+    : jsonRes({ code: -404, message: '啥都木有' })));
+  await assert.rejects(
+    () => resolveCommentOid('https://t.bilibili.com/407750907'),
+    /既不是动态 ID 也不是可用的评论区对象/);
+});
+
+test('resolveCommentOid：裸数字遇全 0 壳 → 安全回退透传，且不额外探测', async t => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return shellDetail(); });
+  const r = await resolveCommentOid('1232243387332034584');
+  assert.deepStrictEqual(r, { oid: '1232243387332034584', type: null }, '裸数字保持零副作用回退');
+  assert.strictEqual(calls, 1, '只查详情，不再发评论区探测请求');
+});
+
+// ====== 12. getDynamicUpper：按 oid 进程内缓存（减少重复请求） ======
 test('getDynamicUpper：同一 oid 第二次命中缓存不再请求', async t => {
   const comment = require('../lib/api/comment');
   comment._resetUpperCache();

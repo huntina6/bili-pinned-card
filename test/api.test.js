@@ -106,6 +106,27 @@ test('filterUpInteractions 无互动', () => {
   assert.deepStrictEqual(filterUpInteractions([], 401315430), []);
 });
 
+test('filterUpInteractions：同一条粉丝评论被 UP 回复且点赞时只渲染一次（去重）', () => {
+  const replies = [
+    mkReply('600', 555, { liked: true }),            // 被 UP 点赞
+    mkReply('601', 401315430, { parent: '600' }),    // 该评论又被 UP 回复
+  ];
+  const items = filterUpInteractions(replies, 401315430);
+  assert.strictEqual(items.length, 1, '不得同时产出「被UP回复」与「被UP点赞」两个块');
+  assert.strictEqual(items[0].kind, 'reply');
+  assert.strictEqual(items[0].parent.rpid, '600');
+});
+
+test('filterUpInteractions：点赞的评论未出现在子回复列表时不参与去重（仍单列）', () => {
+  const replies = [
+    mkReply('700', 555, { liked: true }),
+    mkReply('701', 401315430, { parent: '699' }),    // 父评论不在本页 → parent 为 null
+  ];
+  const items = filterUpInteractions(replies, 401315430);
+  assert.strictEqual(items.length, 2);
+  assert.strictEqual(items.filter(i => i.kind === 'like').length, 1);
+});
+
 test('回归：uid 为字符串时 UP 互动也能匹配（P0 类型不匹配修复）', () => {
   // cli.js 传入的 uid 是字符串（如 '401315430'），而 API 返回的 mid 是 number；
   // 修复前 `r.mid === uid` 恒为 false，UP 互动永远识别不到

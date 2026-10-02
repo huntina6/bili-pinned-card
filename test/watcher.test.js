@@ -5,8 +5,12 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const { classifyError, computeBackoffMs, MAX_BACKOFF_MS } = require('../lib/watcher');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { classifyError, computeBackoffMs, MAX_BACKOFF_MS, runWatcher } = require('../lib/watcher');
 const { BiliError, RISK_CODES } = require('../lib/api');
+const { parseArgs, buildConfig } = require('../lib/args');
 
 test('classifyError：Cookie 失效 (-101) → auth', () => {
   assert.strictEqual(classifyError(new BiliError('Cookie 已失效', -101)), 'auth');
@@ -62,4 +66,25 @@ test('computeBackoffMs：10 分钟上限 + ±20% 抖动边界', () => {
   assert.strictEqual(computeBackoffMs(300, 5, () => 0.5), MAX_BACKOFF_MS);
   assert.strictEqual(computeBackoffMs(60, 1, () => 0), 48000);
   assert.strictEqual(computeBackoffMs(60, 1, () => 1), 72000);
+});
+
+// ====== --once 退出口径（cron/脚本必须能区分成功与失败） ======
+test('runWatcher：--once 遇配置类错误（--rpid 缺 --oid）退出码为 1，结束语不谎报完成', async (t) => {
+  const prevExit = process.exitCode;
+  const logs = [];
+  t.mock.method(console, 'log', (...a) => logs.push(a.join(' ')));
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bpc-watcher-'));
+  try {
+    const cfg = {
+      ...buildConfig(parseArgs(['--oid', '0', '--rpid', '313406396048', '--once', '--quiet']), {}),
+      outDir,
+    };
+    assert.strictEqual(cfg.oid, '', '前置：--oid 0 归一化为空（避免 B站 全 0 空壳评论区）');
+    await runWatcher(cfg, { bannerShown: true, banner: '' });
+    assert.strictEqual(process.exitCode, 1, '配置错误必须以失败退出（此前静默 exit 0）');
+    assert.match(logs.join('\n'), /单次检查未完成/, '结束语应提示未完成，而不是「单次检查完成」');
+  } finally {
+    process.exitCode = prevExit === undefined ? 0 : prevExit;
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
 });

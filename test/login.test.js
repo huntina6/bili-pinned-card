@@ -5,8 +5,16 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 // mock fetch 无真实网络，关闭请求层 1~2s 节流避免拖慢测试
-require('../lib/api/client').setThrottle(false);
+const client = require('../lib/api/client');
+client.setThrottle(false);
+// buvid 现已落盘复用：重定向到临时目录，避免污染真实 ~/.bili-pinned-card/buvid.json
+const buvidDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bili-buvid-login-'));
+client.setBuvidDir(buvidDir);
+test.after(() => { try { fs.rmSync(buvidDir, { recursive: true, force: true }); } catch { /* 忽略 */ } });
 const {
   classifyPoll,
   extractCookiesFromUrl,

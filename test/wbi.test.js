@@ -11,12 +11,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 // mock fetch 无真实网络，关闭请求层节流避免拖慢测试
-require('../lib/api/client').setThrottle(false);
+const client = require('../lib/api/client');
+client.setThrottle(false);
+// buvid 现已落盘复用：comment.js 的 apiGet 会取指纹，同样隔离到临时目录
+const BUVID_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bpc-buvid-'));
+client.setBuvidDir(BUVID_TMP);
 const { getMixinKey, getWbiKey, wbiQuery, setDir, _resetWbiCache } = require('../lib/api/wbi');
 // 文件缓存隔离到临时目录（不触碰真实 ~/.bili-pinned-card/wbi.json）
 const WBI_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'bpc-wbi-'));
 setDir(WBI_TMP);
-test.after(() => { try { fs.rmSync(WBI_TMP, { recursive: true, force: true }); } catch { /* 忽略 */ } });
+test.after(() => {
+  try { fs.rmSync(WBI_TMP, { recursive: true, force: true }); } catch { /* 忽略 */ }
+  try { fs.rmSync(BUVID_TMP, { recursive: true, force: true }); } catch { /* 忽略 */ }
+});
 const {
   isDegraded,
   buildPaginationStr,

@@ -74,6 +74,17 @@ test('sanitizeUrl：凭据参数打码、长值截断、普通参数保留', () 
   assert.ok(bad.includes('…(') && bad.endsWith('字符)'), '超长值应打码标注长度');
 });
 
+test('sanitizeUrl：设备指纹与风控票据/签名同样打码（防守重构把凭据挪进 query）', () => {
+  const u = logger.sanitizeUrl(
+    'https://api.bilibili.com/x/frontend/finger/spi?buvid3=ABCD-1234&buvid4=EFGH-5678&bili_ticket=tk_abc&hexsign=deadbeef&key_id=ec02');
+  assert.ok(u.includes('buvid3=***'), 'buvid3 设备指纹应打码');
+  assert.ok(u.includes('buvid4=***'), 'buvid4 设备指纹应打码');
+  assert.ok(u.includes('bili_ticket=***'), 'bili_ticket 风控票据应打码');
+  assert.ok(u.includes('hexsign=***'), 'hexsign 请求签名应打码');
+  assert.ok(!u.includes('ABCD-1234') && !u.includes('EFGH-5678') && !u.includes('deadbeef'), '原值不得出现');
+  assert.ok(u.includes('key_id=ec02'), '非敏感参数仍保留，便于排障');
+});
+
 test('ANSI 字符串落盘自动剥离颜色', (t) => {
   tmpDir(t);
   logger.info(`\x1b[2m（dim）\x1b[0m 卡片已生成: \x1b[36mcyan\x1b[0m`);
